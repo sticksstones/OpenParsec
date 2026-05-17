@@ -143,7 +143,7 @@ Java_parsec_bindings_Parsec_clientSendGamepadButton(JNIEnv *env, jobject instanc
 {
     Parsec *parsec = getPointer(env, instance, "parsec");
 
-    struct ParsecMessage msg;
+    ParsecMessage msg = {};
     msg.type = MESSAGE_GAMEPAD_BUTTON;
     msg.gamepadButton.button = (ParsecGamepadButton) button;
     msg.gamepadButton.id = (uint32_t) gamepadID;
@@ -158,12 +158,25 @@ Java_parsec_bindings_Parsec_clientSendGamepadAxis(JNIEnv *env, jobject instance,
 {
     Parsec *parsec = getPointer(env, instance, "parsec");
 
-    struct ParsecMessage msg;
+    ParsecMessage msg = {};
     msg.type = MESSAGE_GAMEPAD_AXIS;
     msg.gamepadAxis.axis = (ParsecGamepadAxis) axis;
     msg.gamepadAxis.id = (uint32_t) gamepadID;
-    msg.gamepadAxis.value = (uint16_t) value;
+    // ParsecGamepadAxisMessage.value is int16_t; cast through that so the
+    // sign bit is preserved when the Java side passes a negative axis value.
+    msg.gamepadAxis.value = (int16_t) value;
 
+    return (jint) ParsecClientSendMessage(parsec, &msg);
+}
+
+JNIEXPORT jint JNICALL
+Java_parsec_bindings_Parsec_clientSendGamepadUnplug(JNIEnv *env, jobject instance,
+        jint gamepadID)
+{
+    Parsec *parsec = getPointer(env, instance, "parsec");
+    ParsecMessage msg = {};
+    msg.type = MESSAGE_GAMEPAD_UNPLUG;
+    msg.gamepadUnplug.id = (uint32_t) gamepadID;
     return (jint) ParsecClientSendMessage(parsec, &msg);
 }
 

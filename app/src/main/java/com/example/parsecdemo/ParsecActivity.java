@@ -82,6 +82,11 @@ public class ParsecActivity extends Activity {
     private String connSessionId;
     private String connPeerId;
 
+    /** Virtual on-screen gamepad overlay; null when hidden. */
+    private VirtualGamepad virtualGamepad;
+    /** Stable id used for the on-screen pad's button/axis messages. */
+    private static final int VIRTUAL_GAMEPAD_ID = 1;
+
     // ----- Auto-reconnect watchdog -----
     /** Looper handler that runs the health check on the main thread. */
     private android.os.Handler healthHandler;
@@ -220,6 +225,9 @@ public class ParsecActivity extends Activity {
                 }));
         // Ctrl+Alt+Del — buried in the menu so it isn't fired by accident
         items.add(new SessionFab.Item("Ctrl+Alt+Del", this::sendCtrlAltDel));
+        items.add(new SessionFab.Item(
+                virtualGamepad != null ? "Hide gamepad" : "Show gamepad",
+                this::toggleVirtualGamepad));
         items.add(new SessionFab.Item("Reconnect", this::reconnectSession));
         items.add(new SessionFab.Item("Disconnect", true, this::finish));
 
@@ -540,6 +548,50 @@ public class ParsecActivity extends Activity {
                 scheduleNextHealthCheck();
             });
         }, "ParsecReconnect").start();
+    }
+
+    /** Toggle the on-screen virtual gamepad overlay. Floats above the GL
+     *  surface in landscape and emits gamepad messages on the dedicated
+     *  virtual-pad id so it doesn't collide with a connected physical pad. */
+    private void toggleVirtualGamepad() {
+        if (virtualGamepad != null) {
+            // Send a final unplug so the host doesn't hold stale state.
+            if (parsec != null) {
+                try { parsec.clientSendGamepadUnplug(VIRTUAL_GAMEPAD_ID); }
+                catch (Throwable ignored) {}
+            }
+            root.removeView(virtualGamepad);
+            virtualGamepad = null;
+            rebuildSessionFab();
+            return;
+        }
+        virtualGamepad = new VirtualGamepad(this, new VirtualGamepad.Listener() {
+            @Override public void onButton(int parsecButton, boolean pressed) {
+                if (parsec == null) return;
+                parsec.clientSendGamepadButton(VIRTUAL_GAMEPAD_ID, parsecButton, pressed);
+            }
+            @Override public void onAxis(int parsecAxis, int value) {
+                if (parsec == null) return;
+                parsec.clientSendGamepadAxis(VIRTUAL_GAMEPAD_ID, parsecAxis, value);
+            }
+        });
+        root.addView(virtualGamepad, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        rebuildSessionFab();
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // Forward physical gamepad button presses straight to Parsec.
+        if (GamepadInputHandler.handleKeyEvent(parsec, event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent ev) {
+        // Forward physical gamepad stick / trigger axis updates.
+        if (GamepadInputHandler.handleMotionEvent(parsec, ev)) return true;
+        return super.dispatchGenericMotionEvent(ev);
     }
 
     /** Fire the Ctrl+Alt+Del chord as a single sequence. Note: by default
@@ -1016,6 +1068,9 @@ public class ParsecActivity extends Activity {
     @Override
     protected void onPause() {
         if (surface != null) surface.onPause();
+        // Release any held physical-gamepad inputs so the host doesn't see a
+        // stuck button while we're backgrounded.
+        GamepadInputHandler.unplug(parsec);
         // Pause the watchdog while backgrounded; checking a dead session over
         // and over while the OS has the network paused is pointless.
         stopHealthWatchdog();
