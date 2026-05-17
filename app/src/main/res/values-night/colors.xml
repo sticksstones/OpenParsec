@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- OpenParsec palette (preserved from Assets.xcassets) -->
+    <color name="opAccent">#FFA040FF</color>
+    <color name="opAccentDark">#FF7A29CC</color>
+    <color name="opAccentMuted">#552B1144</color>
+    <color name="opBackgroundGray">#FF1A1A1C</color>
+    <color name="opBackgroundTab">#FF1F1F21</color>
+    <color name="opBackgroundCard">#FF333335</color>
+    <color name="opBackgroundField">#80333337</color>
+    <color name="opBackgroundPrompt">#FF404041</color>
+    <color name="opBackgroundButton">#4D808086</color>
+    <color name="opForeground">#FFFFFFFF</color>
+    <color name="opForegroundInactive">#BFFFFFFF</color>
+    <color name="opShading">#80000000</color>
+    <color name="opDanger">#FFFF453A</color>
+
+    <!-- Material 3 dark color scheme keyed off the OpenParsec purple #A040FF.
+         Derived using Material's tonal palette guidance: primary at tone 80 on
+         dark theme; onPrimary at tone 20; container at tone 30. -->
+    <color name="md_primary">#D4A6FF</color>          <!-- tone 80 of A040FF -->
+    <color name="md_on_primary">#3C0080</color>        <!-- tone 20 -->
+    <color name="md_primary_container">#560097</color> <!-- tone 30 -->
+    <color name="md_on_primary_container">#EFD9FF</color>
+
+    <color name="md_secondary">#CBC1DA</color>
+    <color name="md_on_secondary">#322B41</color>
+    <color name="md_secondary_container">#494258</color>
+    <color name="md_on_secondary_container">#E8DDF7</color>
+
+    <color name="md_tertiary">#EFB8C8</color>
+    <color name="md_on_tertiary">#492532</color>
+    <color name="md_tertiary_container">#633B48</color>
+    <color name="md_on_tertiary_container">#FFD8E4</color>
+
+    <color name="md_error">#FFB4AB</color>
+    <color name="md_on_error">#690005</color>
+    <color name="md_error_container">#93000A</color>
+    <color name="md_on_error_container">#FFDAD6</color>
+
+    <!-- Surface levels — dark, blueish-neutral close to OpenParsec gray -->
+    <color name="md_background">#141218</color>
+    <color name="md_on_background">#E6E1E5</color>
+    <color name="md_surface">#141218</color>
+    <color name="md_on_surface">#E6E1E5</color>
+    <color name="md_surface_variant">#49454F</color>
+    <color name="md_on_surface_variant">#CAC4D0</color>
+    <color name="md_outline">#938F99</color>
+    <color name="md_outline_variant">#444746</color>
+
+    <color name="md_surface_container_lowest">#0F0D13</color>
+    <color name="md_surface_container_low">#1D1B20</color>
+    <color name="md_surface_container">#211F26</color>
+    <color name="md_surface_container_high">#2B2930</color>
+    <color name="md_surface_container_highest">#36343B</color>
+
+    <!-- Legacy aliases retained for any remaining references -->
+    <color name="colorPrimary">@color/md_primary</color>
+    <color name="colorPrimaryDark">@color/md_background</color>
+    <color name="colorAccent">@color/md_primary</color>
+</resources>

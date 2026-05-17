@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- OpenParsec accent (same in light + dark) -->
+    <color name="opAccent">#FFA040FF</color>
+    <color name="opAccentDark">#FF7A29CC</color>
+    <color name="opAccentMuted">#552B1144</color>
+    <color name="opBackgroundGray">#FFFAF8FE</color>
+    <color name="opBackgroundTab">#FFF1ECF6</color>
+    <color name="opBackgroundCard">#FFEAE2F4</color>
+    <color name="opBackgroundField">#80EAE2F4</color>
+    <color name="opBackgroundPrompt">#FFE0D6EF</color>
+    <color name="opBackgroundButton">#33808086</color>
+    <color name="opForeground">#FF1C1B1F</color>
+    <color name="opForegroundInactive">#BF1C1B1F</color>
+    <color name="opShading">#33000000</color>
+    <color name="opDanger">#FFB3261E</color>
+
+    <!-- Material 3 LIGHT color scheme keyed off OpenParsec purple #A040FF -->
+    <color name="md_primary">#6F22C0</color>          <!-- tone 40 -->
+    <color name="md_on_primary">#FFFFFFFF</color>
+    <color name="md_primary_container">#EFD9FF</color> <!-- tone 90 -->
+    <color name="md_on_primary_container">#280062</color>
+
+    <color name="md_secondary">#615A6F</color>
+    <color name="md_on_secondary">#FFFFFFFF</color>
+    <color name="md_secondary_container">#E8DDF7</color>
+    <color name="md_on_secondary_container">#1D182A</color>
+
+    <color name="md_tertiary">#7E5260</color>
+    <color name="md_on_tertiary">#FFFFFFFF</color>
+    <color name="md_tertiary_container">#FFD8E4</color>
+    <color name="md_on_tertiary_container">#31101D</color>
+
+    <color name="md_error">#BA1A1A</color>
+    <color name="md_on_error">#FFFFFFFF</color>
+    <color name="md_error_container">#FFDAD6</color>
+    <color name="md_on_error_container">#410002</color>
+
+    <color name="md_background">#FFFBFF</color>
+    <color name="md_on_background">#1C1B1F</color>
+    <color name="md_surface">#FFFBFF</color>
+    <color name="md_on_surface">#1C1B1F</color>
+    <color name="md_surface_variant">#E7E0EC</color>
+    <color name="md_on_surface_variant">#49454F</color>
+    <color name="md_outline">#79747E</color>
+    <color name="md_outline_variant">#CAC4D0</color>
+
+    <color name="md_surface_container_lowest">#FFFFFFFF</color>
+    <color name="md_surface_container_low">#F7F2FA</color>
+    <color name="md_surface_container">#F1ECF4</color>
+    <color name="md_surface_container_high">#EBE6EE</color>
+    <color name="md_surface_container_highest">#E6E0E9</color>
+
+    <color name="colorPrimary">@color/md_primary</color>
+    <color name="colorPrimaryDark">@color/md_background</color>
+    <color name="colorAccent">@color/md_primary</color>
+</resources>

@@ -1,33 +1,91 @@
-# <p align="center">![icon_transparent.png](OpenParsec/Assets.xcassets/IconTransparent.imageset/icon_transparent.png) ![OpenParsec](OpenParsec/Assets.xcassets/LogoShadow.imageset/logo_shadow.png)</p>
+# OpenParsec for Android
 
-OpenParsec is a simple, open-source Parsec client for iOS/iPadOS written in Swift using the SwiftUI framework and the Parsec SDK.
+[![GitHub stars](https://img.shields.io/github/stars/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/pulls)
+[![GitHub license](https://img.shields.io/github/license/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/blob/main/LICENSE)
+[![GitHub contributors](https://img.shields.io/github/contributors/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/graphs/contributors)
+[![Latest release](https://img.shields.io/github/v/release/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/releases/latest)
 
-This project is still a major WIP, so apologies for the currently lackluster documentation. I'm also very new to both Swift and SwiftUI so I'm sure there are many places for improvement.
+An unofficial Android port of [hugeBlack/OpenParsec][upstream], the open-source
+Parsec remote-desktop client. Connects to a Parsec host PC with the same
+account-based flow as the official Parsec client.
 
-Before building, make sure you have the Parsec SDK framework symlinked or copied to the `Frameworks` folder. Builds were tested on Xcode Version 12.5.
+> Originally an iOS/SwiftUI project by [hugeBlack][upstream-author].
+> Android port (Java, Material 3) by [NomadsGalaxy](https://github.com/nomadsgalaxy).
 
-## Downloads
-<a href="https://stikstore.app/altdirect/?url=https://github.com/hugeBlack/OpenParsec/releases/download/nightly/altstore.json" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/AltSource_Blue.png" alt="Add AltSource" width="200">
-</a>
-<a href="https://github.com/hugeBlack/OpenParsec/releases/download/nightly/OpenParsec.ipa" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/Download_Blue.png" alt="Download .ipa" width="200">
-</a>
+[upstream]: https://github.com/hugeBlack/OpenParsec
+[upstream-author]: https://github.com/hugeBlack
 
-## Touch Control
-You can set the touch mode you want to use in settings. Touchpad mode and direct touch mode are supported.
+---
 
-When streaming, you can tap with 3 fingers to bring up the on-screen keyboard.
+## Download
 
-You can toggle if you want to use 2 fingers to scroll or zoom in the overlay menu.
+Grab the latest signed APK from [Releases](../../releases/latest) and side-load it.
+You may need to enable *Install unknown apps* for your browser or file manager.
 
-## Mouse & keyboard
-USB mouse & keyboard are supported. 
+The app has a built-in update checker that polls this repository's
+`releases/latest` once every 24 hours and offers a one-tap download when a
+newer tag is available. It can be skipped per-version from the prompt.
 
-## Game Controllers
-When streaming, press any trigger button in your controller and parsec will recognize it. Make sure to configure the host properly (install virtual USB driver etc.) before using game controllers.
+## Features
 
-## Lag / Low Bitrate Issue
-If you encounter lags from nowhere or your bitrate hardly goes over 10 Mbps, download Steam Link and do a network test. If you see constant lag spike in the graph, then it's a problem with Apple and there's little we can do to solve this problem. See [here](https://github.com/moonlight-stream/moonlight-ios/issues/627) for more disscussion. 
+- **Touchpad and direct-touch input modes** with a draggable cursor
+- **Pill-shaped on-screen mouse-button row** (L / M / R) with press-and-hold
+  semantics for click-and-drag and middle-button scroll. The row is freely
+  draggable; position persists across sessions
+- **IME accessory bar** above the soft keyboard with modifier keys
+  (Ctrl / Alt / ⊞ / Shift), arrows, Home/End, PgUp/PgDn, Ins/Del, Esc, Tab,
+  F1–F12. Long-press modifiers to lock for chording
+- **Foldable-aware layout** — when the keyboard opens, the desktop view
+  absorbs the IME into existing letterbox space first so the GL surface and
+  soft keyboard share screen real estate. Auto-resets touch + cursor state
+  across fold/unfold to recover from dropped gestures
+- **Display-cutout aware** placement so overlays steer clear of camera
+  punch-outs
+- **Material 3 dynamic theming** (system / light / dark)
+- **4-finger tap** anywhere in-session resets the FAB and mouse-button row
+  to their default positions — a safety hatch if you drag them offscreen
+- **Ctrl+Alt+Del** buried in the in-session FAB menu so it's never fired by
+  accident (requires `host_ctrl_alt_del=1` on the host's Parsec config)
 
-If you can't change your wireless router's channel to 149 like me, my personal experience is that you can try to power off the device you are using to stream as well as any nearby Apple devices, especially Mac, then only power on the device you are using to stream and do the aforementioned network test again. You can turn on other devices if the lag spike is gone and it may sustain for couple hours or days.
+## Build from source
+
+```bash
+git clone https://github.com/nomadsgalaxy/OpenParsec.git
+cd OpenParsec
+./gradlew assembleRelease
+```
+
+The signed APK lands at `app/build/outputs/apk/release/app-release.apk`.
+
+Requirements:
+- Android SDK with API 34
+- NDK `26.3.11579264` (gradle pulls it automatically)
+- Java 17
+
+## Project layout
+
+```
+app/                       Android module
+  src/main/java/.../       Activities, IME, FAB, settings
+  src/main/cpp/            JNI shim around the Parsec SDK
+  src/main/res/            Material 3 resources, themes, drawables
+sdk/                       Parsec SDK headers
+app/libs/                  Pre-built Parsec SDK native libraries per ABI
+```
+
+## License
+
+This port retains the upstream OpenParsec [LICENSE](LICENSE). Parsec SDK
+binaries are redistributed under their original Parsec terms.
+
+## Credits
+
+- [hugeBlack](https://github.com/hugeBlack) — original OpenParsec iOS client
+  that this port mirrors design-wise
+- [Parsec](https://parsec.app) — the underlying remote-desktop SDK
+
+The iOS source from before the Android rewrite is preserved on the
+[`ios-legacy`](../../tree/ios-legacy) branch.

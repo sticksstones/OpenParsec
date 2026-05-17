@@ -1,0 +1,62 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.example.parsecdemo'
+    compileSdk 34
+    ndkVersion '26.3.11579264'
+
+    defaultConfig {
+        applicationId "com.example.parsecdemo"
+        minSdkVersion 27
+        targetSdkVersion 34
+        versionCode 1
+        versionName "0.1.0"
+        externalNativeBuild {
+            cmake {
+                abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+            }
+        }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Sign with debug key so users can install the APK directly from
+            // the GitHub Release without us shipping a private signing cert.
+            signingConfig signingConfigs.debug
+        }
+    }
+    sourceSets.main {
+        jniLibs.srcDirs = ['libs']
+    }
+    externalNativeBuild {
+        cmake {
+            path file('CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'org.jetbrains.kotlin' &&
+            (details.requested.name == 'kotlin-stdlib-jdk7' ||
+             details.requested.name == 'kotlin-stdlib-jdk8' ||
+             details.requested.name == 'kotlin-stdlib')) {
+            details.useTarget('org.jetbrains.kotlin:kotlin-stdlib:1.8.22')
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'com.google.android.material:material:1.12.0'
+}
