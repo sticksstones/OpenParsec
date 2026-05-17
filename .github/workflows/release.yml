@@ -1,0 +1,52 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant gradlew exec permission
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK with version tag
+        id: rename
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk \
+             dist/openparsec-android-${{ github.ref_name }}.apk
+          echo "apk=dist/openparsec-android-${{ github.ref_name }}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.rename.outputs.apk }}
+          generate_release_notes: true
+          name: OpenParsec for Android ${{ github.ref_name }}
+          body: |
+            ## OpenParsec for Android ${{ github.ref_name }}
+
+            Side-load `openparsec-android-${{ github.ref_name }}.apk` on any
+            Android 8.1+ device. The in-app update checker (polls this repo's
+            `releases/latest` once per 24h) will notify users when a newer
+            version is published here.
