@@ -3,6 +3,7 @@ package com.example.parsecdemo;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.InputType;
@@ -15,6 +16,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -132,6 +134,21 @@ public class LoginActivity extends AppCompatActivity {
         credLp.leftMargin = dp(24);
         credLp.rightMargin = dp(24);
         root.addView(footer, credLp);
+
+        // Hide the credit/version footer when the soft keyboard is open so it
+        // can't get pushed up into the form. Reappears when the IME closes.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            final View footerRef = footer;
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                int imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom;
+                footerRef.setVisibility(imeBottom > 0 ? View.GONE : View.VISIBLE);
+                return insets;
+            });
+        } else {
+            // Pre-R fallback: pan the form instead of resizing, so the footer
+            // gets covered by the keyboard rather than overlapping the inputs.
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        }
 
         setContentView(root);
 

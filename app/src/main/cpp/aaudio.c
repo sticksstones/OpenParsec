@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include <aaudio/AAudio.h>
+#include <android/api-level.h>
 #include <android/log.h>
 
 struct aaudio {
@@ -28,10 +29,17 @@ void aaudio_init(struct aaudio **ctx_out)
     AAudioStreamBuilder_setPerformanceMode(ctx->builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
     AAudioStreamBuilder_setErrorCallback(ctx->builder, aaudio_errorcallback, NULL);
 
-    // Optional:
-    // AAudioStreamBuilder_setBufferCapacityInFrames(ctx->builder, ???);            // Use this function if you want a larger buffer
-    // AAudioStreamBuilder_setUsage(ctx->builder, AAUDIO_USAGE_GAME);               // Added in Pie
-    // AAudioStreamBuilder_setContentType(ctx->builder, AAUDIO_CONTENT_TYPE_MUSIC); // Added in Pie
+    // Route remote-desktop audio as full-bandwidth media playback, not as a
+    // voice call. Without these, AAudio's defaults make Android treat the
+    // stream like a phone call: earpiece speaker, narrow-band, voice
+    // processing (echo cancel / noise suppress) which mangles music. Both
+    // setters were added in Android 9 (Pie, API 28). __builtin_available
+    // satisfies Clang's availability check and at runtime falls through to
+    // the unguarded defaults on API 27.
+    if (__builtin_available(android 28, *)) {
+        AAudioStreamBuilder_setUsage(ctx->builder, AAUDIO_USAGE_MEDIA);
+        AAudioStreamBuilder_setContentType(ctx->builder, AAUDIO_CONTENT_TYPE_MOVIE);
+    }
 
     AAudioStreamBuilder_openStream(ctx->builder, &ctx->stream);
 }
