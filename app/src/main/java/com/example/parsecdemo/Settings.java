@@ -79,6 +79,18 @@ public final class Settings {
         sp.edit().remove("mouseRowX").remove("mouseRowY").apply();
     }
 
+    /** Persistent session token returned by the Parsec login API. When set,
+     *  the app skips the login screen and goes straight to HostListActivity.
+     *  Cleared on explicit logout or when the saved token stops working. */
+    public String sessionId() { return sp.getString("sessionId", null); }
+    public void sessionId(String v) { sp.edit().putString("sessionId", v).apply(); }
+    public void clearSession() { sp.edit().remove("sessionId").apply(); }
+
+    /** Optional last-used email so the login form can prefill it. Password is
+     *  NEVER persisted — only the session token is. */
+    public String lastEmail() { return sp.getString("lastEmail", ""); }
+    public void lastEmail(String v) { sp.edit().putString("lastEmail", v).apply(); }
+
     public boolean isTouchpadMode() { return CURSOR_TOUCHPAD.equals(cursorMode()); }
 
     public int hostWidth() {

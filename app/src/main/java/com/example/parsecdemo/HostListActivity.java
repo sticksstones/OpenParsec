@@ -250,6 +250,17 @@ public class HostListActivity extends AppCompatActivity {
                 hideLoading();
                 if (error != null) {
                     hostCount.setText("0 hosts");
+                    if (looksLikeAuthFailure(error)) {
+                        // Saved session expired or revoked — wipe and force a
+                        // fresh login. No alert; the login screen is the right
+                        // next step on its own.
+                        settings.clearSession();
+                        Intent i = new Intent(HostListActivity.this, LoginActivity.class);
+                        i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                        finish();
+                        return;
+                    }
                     new MaterialAlertDialogBuilder(HostListActivity.this)
                             .setTitle("Couldn't load hosts")
                             .setMessage(error.getMessage())
@@ -362,14 +373,31 @@ public class HostListActivity extends AppCompatActivity {
     private void confirmLogout() {
         new MaterialAlertDialogBuilder(this)
                 .setTitle("Log out?")
-                .setPositiveButton("Log out", (d, w) -> {
-                    Intent i = new Intent(this, LoginActivity.class);
-                    i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(i);
-                    finish();
-                })
+                .setPositiveButton("Log out", (d, w) -> doLogout())
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void doLogout() {
+        // Clear the persisted session so the next launch lands on LoginActivity.
+        settings.clearSession();
+        Intent i = new Intent(this, LoginActivity.class);
+        i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(i);
+        finish();
+    }
+
+    /** If the saved session token has expired (e.g. the user logged out from
+     *  another device), the very first listHosts call will fail. Treat that
+     *  as a hint to clear the token and bounce back to the login screen. */
+    private boolean looksLikeAuthFailure(Exception e) {
+        if (e == null) return false;
+        String m = e.getMessage();
+        if (m == null) return false;
+        String low = m.toLowerCase(Locale.US);
+        return low.contains("401") || low.contains("403")
+                || low.contains("unauthor") || low.contains("forbidden")
+                || low.contains("invalid session") || low.contains("expired");
     }
 
     // ===== Loading overlay =====

@@ -38,10 +38,12 @@ public class LoginActivity extends AppCompatActivity {
     private MaterialButton loginButton;
     private FrameLayout root;
     private FrameLayout loadingOverlay;
+    private Settings settings;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        settings = new Settings(this);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(MaterialUi.color(this, com.google.android.material.R.attr.colorSurface));
@@ -75,6 +77,7 @@ public class LoginActivity extends AppCompatActivity {
         form.addView(wordmark, wmLp);
 
         emailField = new TextInputEditText(this);
+        emailField.setText(settings.lastEmail());
         TextInputLayout emailLayout = MaterialUi.textField(this, "Email", emailField,
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         form.addView(emailLayout, stackLp());
@@ -272,6 +275,10 @@ public class LoginActivity extends AppCompatActivity {
                     return;
                 }
                 if (r.info != null) {
+                    // Persist the session token + email so the next launch can
+                    // skip the login screen entirely.
+                    settings.sessionId(r.info.sessionId);
+                    settings.lastEmail(email);
                     Intent i = new Intent(LoginActivity.this, HostListActivity.class);
                     i.putExtra(EXTRA_SESSION_ID, r.info.sessionId);
                     startActivity(i);

@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # GitHub deprecated Node.js 20 actions; this opts each step into Node 24
+  # so we don't get warning spam on every run.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
