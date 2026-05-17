@@ -50,6 +50,27 @@ public class ClientGLSurface extends GLSurfaceView {
     private static final float TAP_SLOP_PX = 12f;
     private static final long TAP_MAX_MS = 180L;
 
+    // ----- Multi-touch scroll state (used in both direct & trackpad modes) -----
+    /** Engaged when a second finger touches down during a gesture. While true,
+     *  finger motion translates to wheel events instead of cursor motion. */
+    private boolean twoFingerScroll = false;
+    private float twoFingerLastCentroidY = 0f;
+    private float twoFingerScrollAccum = 0f;
+
+    // ----- Tap-tap-hold drag (trackpad mode) -----
+    /** Time of the most recent ACTION_UP that completed a quick tap. A second
+     *  ACTION_DOWN within {@link #TAP_TAP_HOLD_WINDOW_MS} of this time engages
+     *  click-and-drag: the left button is held while that finger moves, and
+     *  released on its lift. Standard trackpad behavior. */
+    private long lastTapUpMs = 0L;
+    private float lastTapUpX = 0f, lastTapUpY = 0f;
+    private boolean tapTapHoldDragActive = false;
+    private static final long TAP_TAP_HOLD_WINDOW_MS = 280L;
+    private static final float TAP_TAP_HOLD_SLOP_PX = 32f;
+
+    /** Left button is currently held by direct-touch mode (1-finger drag). */
+    private boolean directLeftHeld = false;
+
     private int hostWidth = 1920;
     private int hostHeight = 1080;
 
@@ -138,6 +159,12 @@ public class ClientGLSurface extends GLSurfaceView {
         downTime = 0L;
         downX = downY = 0f;
         lastX = lastY = 0f;
+        twoFingerScroll = false;
+        twoFingerScrollAccum = 0f;
+        twoFingerLastCentroidY = 0f;
+        tapTapHoldDragActive = false;
+        directLeftHeld = false;
+        lastTapUpMs = 0L;
         synchronized (parsecLock) {
             if (parsecAlive && parsec != null) {
                 // Release all standard mouse buttons defensively.
@@ -200,52 +227,112 @@ public class ClientGLSurface extends GLSurfaceView {
     }
 
     private boolean onDirectTouchEvent(MotionEvent ev) {
-        float x = ev.getX();
-        float y = ev.getY();
-        switch (ev.getAction()) {
-            case MotionEvent.ACTION_DOWN:
+        int action = ev.getActionMasked();
+        int pointers = ev.getPointerCount();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN: {
+                float x = ev.getX();
+                float y = ev.getY();
                 cursorX = x; cursorY = y;
                 sendAbsoluteMotionMapped(x, y);
                 sendButton(true);
+                directLeftHeld = true;
                 return true;
-            case MotionEvent.ACTION_MOVE:
-                cursorX = x; cursorY = y;
-                sendAbsoluteMotionMapped(x, y);
+            }
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                // Second finger joined — enter two-finger scroll mode. Release
+                // the left button so we don't drag-select while scrolling.
+                if (directLeftHeld) {
+                    sendButton(false);
+                    directLeftHeld = false;
+                }
+                beginTwoFingerScroll(ev);
+                return true;
+            }
+            case MotionEvent.ACTION_MOVE: {
+                if (twoFingerScroll && pointers >= 2) {
+                    updateTwoFingerScroll(ev);
+                } else if (!twoFingerScroll) {
+                    float x = ev.getX();
+                    float y = ev.getY();
+                    cursorX = x; cursorY = y;
+                    sendAbsoluteMotionMapped(x, y);
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_POINTER_UP:
+                // Stay in scroll mode until the LAST finger lifts — bouncing
+                // back to drag mid-gesture causes spurious clicks.
                 return true;
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
-                cursorX = x; cursorY = y;
-                sendAbsoluteMotionMapped(x, y);
-                sendButton(false);
+            case MotionEvent.ACTION_CANCEL: {
+                if (twoFingerScroll) {
+                    twoFingerScroll = false;
+                } else if (directLeftHeld) {
+                    sendButton(false);
+                    directLeftHeld = false;
+                }
                 return true;
+            }
         }
         return true;
     }
 
     private boolean onTrackpadEvent(MotionEvent ev) {
-        switch (ev.getAction()) {
-            case MotionEvent.ACTION_DOWN:
+        int action = ev.getActionMasked();
+        int pointers = ev.getPointerCount();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN: {
                 lastX = ev.getX();
                 lastY = ev.getY();
                 downX = lastX;
                 downY = lastY;
                 downTime = ev.getEventTime();
                 notifyCursor(true);
+
+                // Tap-tap-hold drag: if this DOWN follows a quick recent tap-up
+                // near the same spot, engage left-button drag for this gesture.
+                long sinceLastTap = downTime - lastTapUpMs;
+                float distFromLastTap = Math.abs(downX - lastTapUpX) + Math.abs(downY - lastTapUpY);
+                if (lastTapUpMs > 0
+                        && sinceLastTap <= TAP_TAP_HOLD_WINDOW_MS
+                        && distFromLastTap <= TAP_TAP_HOLD_SLOP_PX
+                        && !externalButtonHeld) {
+                    tapTapHoldDragActive = true;
+                    sendButton(true);
+                }
+                // Consume the trigger either way so a slow third tap doesn't
+                // re-engage drag.
+                lastTapUpMs = 0L;
                 return true;
+            }
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                // Second finger → two-finger scroll. If a tap-tap-hold drag was
+                // in progress, release the left button so we don't drag-select.
+                if (tapTapHoldDragActive) {
+                    sendButton(false);
+                    tapTapHoldDragActive = false;
+                }
+                beginTwoFingerScroll(ev);
+                return true;
+            }
             case MotionEvent.ACTION_MOVE: {
+                if (twoFingerScroll && pointers >= 2) {
+                    updateTwoFingerScroll(ev);
+                    return true;
+                }
                 float dx = ev.getX() - lastX;
                 float dy = ev.getY() - lastY;
                 lastX = ev.getX();
                 lastY = ev.getY();
                 if (scrollMode) {
-                    // Accumulate vertical motion into wheel ticks.
+                    // Middle-button scroll mode: vertical drag → wheel ticks.
                     scrollAccum += dy;
                     int ticks = (int) (scrollAccum / SCROLL_PX_PER_TICK);
                     if (ticks != 0) {
                         scrollAccum -= ticks * SCROLL_PX_PER_TICK;
-                        // Parsec wheel: positive y = scroll down (page moves up).
-                        // Drag down should scroll down → ticks already match.
-                        sendWheel(0, ticks * 120);
+                        // Parsec wheel: positive y = scroll down (SDK header).
+                        sendWheel(0, ticks);
                     }
                 } else {
                     cursorX = clamp(cursorX + dx * sensitivity, 0, surfaceWidth - 1);
@@ -255,7 +342,18 @@ public class ClientGLSurface extends GLSurfaceView {
                 }
                 return true;
             }
+            case MotionEvent.ACTION_POINTER_UP:
+                return true;
             case MotionEvent.ACTION_UP: {
+                if (twoFingerScroll) {
+                    twoFingerScroll = false;
+                    return true;
+                }
+                if (tapTapHoldDragActive) {
+                    sendButton(false);
+                    tapTapHoldDragActive = false;
+                    return true;
+                }
                 long dt = ev.getEventTime() - downTime;
                 float totalDx = ev.getX() - downX;
                 float totalDy = ev.getY() - downY;
@@ -265,13 +363,49 @@ public class ClientGLSurface extends GLSurfaceView {
                 if (!moved && dt <= TAP_MAX_MS && !externalButtonHeld && !scrollMode) {
                     sendButton(true);
                     sendButton(false);
+                    // Remember this tap so a quick follow-up tap-and-hold can
+                    // promote into a click-drag gesture.
+                    lastTapUpMs = ev.getEventTime();
+                    lastTapUpX = ev.getX();
+                    lastTapUpY = ev.getY();
                 }
                 return true;
             }
             case MotionEvent.ACTION_CANCEL:
+                if (twoFingerScroll) twoFingerScroll = false;
+                if (tapTapHoldDragActive) {
+                    sendButton(false);
+                    tapTapHoldDragActive = false;
+                }
                 return true;
         }
         return true;
+    }
+
+    private void beginTwoFingerScroll(MotionEvent ev) {
+        twoFingerScroll = true;
+        twoFingerScrollAccum = 0f;
+        twoFingerLastCentroidY = centroidY(ev);
+    }
+
+    private void updateTwoFingerScroll(MotionEvent ev) {
+        float cy = centroidY(ev);
+        float dy = cy - twoFingerLastCentroidY;
+        twoFingerLastCentroidY = cy;
+        twoFingerScrollAccum += dy;
+        int ticks = (int) (twoFingerScrollAccum / SCROLL_PX_PER_TICK);
+        if (ticks != 0) {
+            twoFingerScrollAccum -= ticks * SCROLL_PX_PER_TICK;
+            sendWheel(0, ticks);
+        }
+    }
+
+    private float centroidY(MotionEvent ev) {
+        int n = ev.getPointerCount();
+        if (n <= 0) return 0f;
+        float sum = 0f;
+        for (int i = 0; i < n; i++) sum += ev.getY(i);
+        return sum / n;
     }
 
     private float clamp(float v, float lo, float hi) {
