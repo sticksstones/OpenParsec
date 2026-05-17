@@ -264,7 +264,7 @@ public class ParsecActivity extends Activity {
         keyboardCapture.setBackground(null);
         keyboardCapture.setCursorVisible(false);
         keyboardCapture.setAlpha(0.01f);
-        keyboardCapture.setText(" ");
+        keyboardCapture.setText(CAPTURE_SENTINEL);
         keyboardCapture.setSelection(1);
 
         keyboardCapture.addTextChangedListener(new TextWatcher() {
@@ -288,10 +288,10 @@ public class ParsecActivity extends Activity {
                 // the text already IS the sentinel (calling setText(" ") on a
                 // " "-valued field still re-enters afterTextChanged via some
                 // IMEs and would recurse infinitely).
-                if (s.length() == 1 && s.charAt(0) == ' ') return;
+                if (s.length() == 1 && s.charAt(0) == CAPTURE_SENTINEL.charAt(0)) return;
                 ignoreCaptureChange = true;
                 try {
-                    s.replace(0, s.length(), " ");
+                    s.replace(0, s.length(), CAPTURE_SENTINEL);
                     keyboardCapture.setSelection(1);
                 } finally {
                     ignoreCaptureChange = false;
@@ -323,6 +323,13 @@ public class ParsecActivity extends Activity {
     private static final int PK_LALT = 226;
     private static final int PK_LGUI = 227;
 
+    /** Non-typeable Private Use Area character used as a placeholder in the
+     *  hidden keyboardCapture EditText. Lets us detect backspaces even when
+     *  the user has cleared the field, without colliding with any character
+     *  a real keyboard can produce (including spacebar — previously this was
+     *  ' ' which silently ate every space typed). */
+    private static final String CAPTURE_SENTINEL = "";
+
     /** Send a key press+release surrounded by modifier press/release pairs from
      *  the accessory bar plus an optional implicit shift. One-shot modifiers
      *  are cleared via {@link ImeAccessoryBar#consumeArmedModifiers()}. */
@@ -348,8 +355,8 @@ public class ParsecActivity extends Activity {
     }
 
     private void sendCharToHost(char ch) {
-        if (ch == ' ') {
-            // Space sentinel — used to detect deletions; don't forward.
+        if (ch == CAPTURE_SENTINEL.charAt(0)) {
+            // Sentinel char — used to detect backspaces; don't forward to host.
             return;
         }
         int pk = KeyMap.fromChar(ch);

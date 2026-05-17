@@ -55,7 +55,18 @@ public class ClientGLSurface extends GLSurfaceView {
      *  finger motion translates to wheel events instead of cursor motion. */
     private boolean twoFingerScroll = false;
     private float twoFingerLastCentroidY = 0f;
+    private float twoFingerLastCentroidX = 0f;
     private float twoFingerScrollAccum = 0f;
+    private float twoFingerScrollAccumX = 0f;
+    /** Tracks whether a two-finger gesture actually scrolled (moved enough to
+     *  cross a scroll-tick threshold). Used to distinguish a two-finger TAP
+     *  (right click on Win/Mac touchpads) from a two-finger drag. */
+    private boolean twoFingerScrollFired = false;
+    private long twoFingerDownTime = 0L;
+    private float twoFingerDownCentroidX = 0f;
+    private float twoFingerDownCentroidY = 0f;
+    private static final long TWO_FINGER_TAP_MAX_MS = 220L;
+    private static final float TWO_FINGER_TAP_SLOP_PX = 24f;
 
     // ----- Tap-tap-hold drag (trackpad mode) -----
     /** Time of the most recent ACTION_UP that completed a quick tap. A second
@@ -267,6 +278,7 @@ public class ClientGLSurface extends GLSurfaceView {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL: {
                 if (twoFingerScroll) {
+                    if (action == MotionEvent.ACTION_UP) maybeFireTwoFingerTap(ev);
                     twoFingerScroll = false;
                 } else if (directLeftHeld) {
                     sendButton(false);
@@ -346,6 +358,7 @@ public class ClientGLSurface extends GLSurfaceView {
                 return true;
             case MotionEvent.ACTION_UP: {
                 if (twoFingerScroll) {
+                    maybeFireTwoFingerTap(ev);
                     twoFingerScroll = false;
                     return true;
                 }
@@ -385,18 +398,50 @@ public class ClientGLSurface extends GLSurfaceView {
     private void beginTwoFingerScroll(MotionEvent ev) {
         twoFingerScroll = true;
         twoFingerScrollAccum = 0f;
+        twoFingerScrollAccumX = 0f;
+        twoFingerScrollFired = false;
         twoFingerLastCentroidY = centroidY(ev);
+        twoFingerLastCentroidX = centroidX(ev);
+        twoFingerDownTime = ev.getEventTime();
+        twoFingerDownCentroidY = twoFingerLastCentroidY;
+        twoFingerDownCentroidX = twoFingerLastCentroidX;
     }
 
     private void updateTwoFingerScroll(MotionEvent ev) {
         float cy = centroidY(ev);
+        float cx = centroidX(ev);
         float dy = cy - twoFingerLastCentroidY;
+        float dx = cx - twoFingerLastCentroidX;
         twoFingerLastCentroidY = cy;
+        twoFingerLastCentroidX = cx;
         twoFingerScrollAccum += dy;
-        int ticks = (int) (twoFingerScrollAccum / SCROLL_PX_PER_TICK);
-        if (ticks != 0) {
-            twoFingerScrollAccum -= ticks * SCROLL_PX_PER_TICK;
-            sendWheel(0, ticks);
+        twoFingerScrollAccumX += dx;
+        int ticksY = (int) (twoFingerScrollAccum  / SCROLL_PX_PER_TICK);
+        int ticksX = (int) (twoFingerScrollAccumX / SCROLL_PX_PER_TICK);
+        if (ticksY != 0 || ticksX != 0) {
+            twoFingerScrollAccum  -= ticksY * SCROLL_PX_PER_TICK;
+            twoFingerScrollAccumX -= ticksX * SCROLL_PX_PER_TICK;
+            // Parsec wheel.x: positive = scroll right; wheel.y: positive = down
+            sendWheel(ticksX, ticksY);
+            twoFingerScrollFired = true;
+        }
+    }
+
+    /** Emit a right-click if the just-ended two-finger gesture qualifies as a
+     *  tap (short duration, minimal centroid drift, no wheel ticks fired).
+     *  Matches Windows precision touchpad / macOS secondary-click. */
+    private void maybeFireTwoFingerTap(MotionEvent ev) {
+        if (twoFingerScrollFired) return;
+        long dt = ev.getEventTime() - twoFingerDownTime;
+        if (dt > TWO_FINGER_TAP_MAX_MS) return;
+        float totalDx = Math.abs(twoFingerLastCentroidX - twoFingerDownCentroidX);
+        float totalDy = Math.abs(twoFingerLastCentroidY - twoFingerDownCentroidY);
+        if (totalDx + totalDy > TWO_FINGER_TAP_SLOP_PX) return;
+        synchronized (parsecLock) {
+            if (parsecAlive && parsec != null) {
+                parsec.clientSendMouseButton(3 /* MOUSE_R */, true);
+                parsec.clientSendMouseButton(3 /* MOUSE_R */, false);
+            }
         }
     }
 
@@ -405,6 +450,14 @@ public class ClientGLSurface extends GLSurfaceView {
         if (n <= 0) return 0f;
         float sum = 0f;
         for (int i = 0; i < n; i++) sum += ev.getY(i);
+        return sum / n;
+    }
+
+    private float centroidX(MotionEvent ev) {
+        int n = ev.getPointerCount();
+        if (n <= 0) return 0f;
+        float sum = 0f;
+        for (int i = 0; i < n; i++) sum += ev.getX(i);
         return sum / n;
     }
 
