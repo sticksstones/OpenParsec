@@ -236,9 +236,9 @@ public class ParsecActivity extends Activity {
                 heldButtonCount = Math.max(0, heldButtonCount + (pressed ? 1 : -1));
                 surface.setExternalButtonHeld(heldButtonCount > 0);
             }
-            @Override public void onScrollMode(boolean on) {
+            @Override public void onScrollDelta(int ticksX, int ticksY) {
                 if (surface == null) return;
-                surface.setScrollMode(on);
+                surface.sendScrollDelta(ticksX, ticksY);
             }
             @Override public void onMiddleClick() {
                 if (surface == null) return;

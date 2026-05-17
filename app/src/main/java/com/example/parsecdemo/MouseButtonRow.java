@@ -27,11 +27,11 @@ public final class MouseButtonRow extends LinearLayout {
     public interface ButtonListener {
         /** Mouse button press/release. parsecButton uses Parsec.MOUSE_L / MOUSE_MIDDLE / MOUSE_R. */
         void onButton(int parsecButton, boolean pressed);
-        /** Toggle scroll mode (engaged while user holds the middle button). */
-        void onScrollMode(boolean on);
-        /** Quick tap on the middle button fires a middle-click on the host;
-         *  longer hold engages scroll mode instead. */
+        /** Quick tap on the middle button fires a middle-click on the host. */
         void onMiddleClick();
+        /** Wheel ticks emitted while the user is dragging on the middle button
+         *  itself. Positive y = scroll down (matches Parsec SDK convention). */
+        void onScrollDelta(int ticksX, int ticksY);
         /** User finished dragging the row; final position should be persisted. */
         void onRepositioned(float xPx, float yPx);
     }
@@ -184,74 +184,57 @@ public final class MouseButtonRow extends LinearLayout {
         btn.setLayoutParams(lp);
 
         if (scroll) {
-            // Middle button — pure TOGGLE for scroll mode (with a long-press
-            // escape hatch for actual middle-click).
+            // Middle button = press-and-drag scroll wheel.
             //
-            // The hold-to-scroll workflow Android wants us to use (finger A
-            // owns M, finger B drags the surface) is unreliable because
-            // split-touch routing doesn't always deliver finger B to the
-            // SurfaceView while finger A holds M. Worse, holding M sends
-            // ambiguous signals (the surface still sees the leftover
-            // tap-tap-hold state, the host enters middle-button auto-scroll
-            // mode in some browsers, etc).
-            //
-            // Toggle is unambiguous:
-            //   • Tap M       → engage/disengage scroll mode (latched).
-            //                   Highlighted while engaged. Any single-finger
-            //                   drag on the surface produces wheel ticks.
-            //   • Long-press  → fire a momentary MOUSE_MIDDLE press+release.
-            final boolean[] scrollLatched = { false };
-            final boolean[] consumedByLongPress = { false };
-
-            btn.setOnLongClickListener(v -> {
-                consumedByLongPress[0] = true;
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
-                listener.onMiddleClick();
-                return true;
-            });
-            btn.setLongClickable(true);
+            // Finger A touches M, then slides up/down WITHOUT lifting. Because
+            // the M button captures the ACTION_DOWN, all subsequent MOVE/UP
+            // events for that pointer are delivered here, even when the finger
+            // is well past the button bounds. We translate the Y-delta into
+            // wheel ticks directly. If the finger never moves enough to fire
+            // a tick AND lifts quickly, we fire MOUSE_MIDDLE instead.
+            final long[] downAtMs = { 0L };
+            final float[] lastY = { 0f };
+            final float[] accumY = { 0f };
+            final boolean[] hasScrolled = { false };
+            final float pxPerTick = dp(8);
 
             btn.setOnTouchListener((v, ev) -> {
                 switch (ev.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        // Visual press hint; final color resolved on UP.
                         bg.setColor(pressedBg);
                         t.setTextColor(pressedFg);
-                        consumedByLongPress[0] = false;
-                        return false; // allow long-press detector to run
-                    case MotionEvent.ACTION_UP:
-                        if (consumedByLongPress[0]) {
-                            // Middle-click already fired via long-press path.
-                            // Restore visual state without flipping the latch.
-                            if (scrollLatched[0]) {
-                                bg.setColor(pressedBg);
-                                t.setTextColor(pressedFg);
-                            } else {
-                                bg.setColor(idleBg);
-                                t.setTextColor(idleFg);
-                            }
-                            return true;
+                        downAtMs[0] = System.currentTimeMillis();
+                        lastY[0] = ev.getRawY();
+                        accumY[0] = 0f;
+                        hasScrolled[0] = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE: {
+                        float dy = ev.getRawY() - lastY[0];
+                        lastY[0] = ev.getRawY();
+                        accumY[0] += dy;
+                        int ticks = (int) (accumY[0] / pxPerTick);
+                        if (ticks != 0) {
+                            accumY[0] -= ticks * pxPerTick;
+                            // Parsec wheel: positive y = scroll down.
+                            // Finger drag DOWN should scroll the page DOWN
+                            // (Windows touchpad convention), so ticks already
+                            // match (positive dy → positive ticks).
+                            listener.onScrollDelta(0, ticks);
+                            hasScrolled[0] = true;
                         }
-                        // Quick tap → toggle scroll latch.
-                        scrollLatched[0] = !scrollLatched[0];
-                        if (scrollLatched[0]) {
-                            bg.setColor(pressedBg);
-                            t.setTextColor(pressedFg);
-                            listener.onScrollMode(true);
-                        } else {
-                            bg.setColor(idleBg);
-                            t.setTextColor(idleFg);
-                            listener.onScrollMode(false);
+                        return true;
+                    }
+                    case MotionEvent.ACTION_UP:
+                        bg.setColor(idleBg);
+                        t.setTextColor(idleFg);
+                        if (!hasScrolled[0]) {
+                            long dt = System.currentTimeMillis() - downAtMs[0];
+                            if (dt < MIDDLE_CLICK_MAX_MS) listener.onMiddleClick();
                         }
                         return true;
                     case MotionEvent.ACTION_CANCEL:
-                        if (scrollLatched[0]) {
-                            bg.setColor(pressedBg);
-                            t.setTextColor(pressedFg);
-                        } else {
-                            bg.setColor(idleBg);
-                            t.setTextColor(idleFg);
-                        }
+                        bg.setColor(idleBg);
+                        t.setTextColor(idleFg);
                         return true;
                 }
                 return false;

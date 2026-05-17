@@ -158,6 +158,17 @@ public class ClientGLSurface extends GLSurfaceView {
         this.scrollAccum = 0f;
     }
 
+    /** Emit a wheel event with the user's scroll-sensitivity multiplier
+     *  applied. Called by the on-screen middle-button row when the user
+     *  drags up/down on the M button itself. */
+    public void sendScrollDelta(int ticksX, int ticksY) {
+        synchronized (parsecLock) {
+            if (parsecAlive && parsec != null) {
+                parsec.clientSendMouseWheel(scaledTick(ticksX), scaledTick(ticksY));
+            }
+        }
+    }
+
     /** Press or release a specific mouse button (used by the on-screen button row). */
     public void sendButtonExternal(int parsecButton, boolean pressed) {
         synchronized (parsecLock) {
