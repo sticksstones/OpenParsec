@@ -77,6 +77,11 @@ public class ParsecActivity extends Activity {
     private long gestureStartMs = 0L;
     private static final long FOUR_FINGER_TAP_WINDOW_MS = 500L;
 
+    /** Connection credentials, cached so the user can reconnect from the FAB
+     *  menu without bouncing back through the host list. */
+    private String connSessionId;
+    private String connPeerId;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -134,6 +139,8 @@ public class ParsecActivity extends Activity {
             statusView.setText("Missing session/peer.");
             return;
         }
+        connSessionId = sessionId;
+        connPeerId = peerId;
 
         parsec = new Parsec();
         parsec.setLogCallback();
@@ -193,6 +200,7 @@ public class ParsecActivity extends Activity {
                 }));
         // Ctrl+Alt+Del — buried in the menu so it isn't fired by accident
         items.add(new SessionFab.Item("Ctrl+Alt+Del", this::sendCtrlAltDel));
+        items.add(new SessionFab.Item("Reconnect", this::reconnectSession));
         items.add(new SessionFab.Item("Disconnect", true, this::finish));
 
         fab = new SessionFab(this, root, items);
@@ -382,6 +390,67 @@ public class ParsecActivity extends Activity {
 
     private void sendKeyToHost(int parsecKey, boolean withShift) {
         sendWithAccessoryModifiers(parsecKey, withShift);
+    }
+
+    /** Tear down the current Parsec session and reconnect using the cached
+     *  sessionId / peerId. Lets the user recover from "session died while
+     *  backgrounded / network dropped" without going back to the host list. */
+    private void reconnectSession() {
+        if (connSessionId == null || connPeerId == null) {
+            Toast.makeText(this, "No saved connection to reconnect.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        statusView.setText("Reconnecting…");
+        statusView.setVisibility(View.VISIBLE);
+
+        // Tear down the existing surface + parsec.
+        if (surface != null) {
+            surface.shutdown();
+            root.removeView(surface);
+            surface = null;
+        }
+        if (parsec != null) {
+            try { parsec.clientDestroy(); } catch (Throwable ignored) {}
+            try { parsec.destroy(); } catch (Throwable ignored) {}
+            parsec = null;
+        }
+        heldButtonCount = 0;
+        if (imeBar != null) imeBar.clearLatchedModifiers();
+
+        // Re-init and reconnect on a worker thread so a slow handshake doesn't
+        // block the UI.
+        new Thread(() -> {
+            final Parsec p = new Parsec();
+            p.setLogCallback();
+            p.init();
+            final int rc = p.clientConnect(connSessionId, connPeerId);
+            runOnUiThread(() -> {
+                if (rc != 0) {
+                    statusView.setText("Reconnect failed (code " + rc + ")");
+                    Toast.makeText(this, "Reconnect failed: " + rc, Toast.LENGTH_LONG).show();
+                    try { p.clientDestroy(); } catch (Throwable ignored) {}
+                    try { p.destroy(); } catch (Throwable ignored) {}
+                    return;
+                }
+                parsec = p;
+                statusView.setVisibility(View.GONE);
+                surface = new ClientGLSurface(getApplicationContext());
+                surface.setParsec(parsec);
+                applySettingsToSurface();
+                surface.setTrackpadListener((x, y, visible) -> {
+                    if (cursorView == null) return;
+                    if (!visible) { cursorView.setVisibility(View.GONE); return; }
+                    int size = cursorView.getWidth();
+                    if (size == 0) size = cursorSizePx();
+                    cursorView.setTranslationX(x - size / 2f);
+                    cursorView.setTranslationY(y - size / 2f);
+                    cursorView.setVisibility(View.VISIBLE);
+                });
+                root.addView(surface, 0, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                surface.renderInit();
+            });
+        }, "ParsecReconnect").start();
     }
 
     /** Fire the Ctrl+Alt+Del chord as a single sequence. Note: by default

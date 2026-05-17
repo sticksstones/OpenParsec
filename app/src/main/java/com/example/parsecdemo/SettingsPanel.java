@@ -153,15 +153,7 @@ public final class SettingsPanel {
         addDivider(a, about);
         about.addView(rowAction(a, "Check for updates",
                 "Look for a newer release on GitHub now",
-                () -> {
-                    // Bypass the 24h debounce by clearing the last-check timestamp.
-                    a.getSharedPreferences("openparsec_update", Context.MODE_PRIVATE)
-                            .edit()
-                            .remove("lastCheckMs")
-                            .remove("dismissedTag")
-                            .apply();
-                    UpdateChecker.checkInBackground(a);
-                }));
+                () -> UpdateChecker.checkInteractive(a)));
         list.addView(about);
 
         TextView credit = new TextView(a);

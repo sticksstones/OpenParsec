@@ -135,20 +135,10 @@ public class LoginActivity extends AppCompatActivity {
         credLp.rightMargin = dp(24);
         root.addView(footer, credLp);
 
-        // Hide the credit/version footer when the soft keyboard is open so it
-        // can't get pushed up into the form. Reappears when the IME closes.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            final View footerRef = footer;
-            root.setOnApplyWindowInsetsListener((v, insets) -> {
-                int imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom;
-                footerRef.setVisibility(imeBottom > 0 ? View.GONE : View.VISIBLE);
-                return insets;
-            });
-        } else {
-            // Pre-R fallback: pan the form instead of resizing, so the footer
-            // gets covered by the keyboard rather than overlapping the inputs.
-            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
-        }
+        // Soft keyboard handling: the manifest sets windowSoftInputMode=adjustPan
+        // for this activity so the form pans up over the footer when the IME
+        // opens, instead of adjustResize which would shrink the layout and
+        // squish the bottom-anchored footer into the inputs.
 
         setContentView(root);
 

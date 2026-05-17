@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -48,6 +49,44 @@ public final class UpdateChecker {
     private static final long MIN_INTERVAL_MS = TimeUnit.HOURS.toMillis(24);
 
     private UpdateChecker() {}
+
+    /** Interactive update check — bypasses the 24h debounce and the
+     *  dismissed-tag persistence, and always shows the user feedback:
+     *  the update dialog if a newer version is available, a toast saying
+     *  "you're on the latest version" otherwise, or an error toast on
+     *  network failure. Used by the Settings panel "Check for updates" row. */
+    public static void checkInteractive(final Activity activity) {
+        if (activity == null) return;
+        final Context appCtx = activity.getApplicationContext();
+        Toast.makeText(activity, "Checking for updates…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            Exception err = null;
+            Result r = null;
+            try { r = fetchLatest(); } catch (Exception e) { err = e; }
+            final Result result = r;
+            final Exception error = err;
+            appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                if (error != null || result == null) {
+                    Toast.makeText(activity, "Update check failed"
+                            + (error != null && error.getMessage() != null
+                                    ? ": " + error.getMessage() : ""),
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                String current = BuildConfig.VERSION_NAME;
+                if (isNewer(result.tagName, current)) {
+                    showUpdateDialog(activity, result, current);
+                } else {
+                    Toast.makeText(activity,
+                            "You're on the latest version (v" + current + ")",
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+        }, "OpenParsec-UpdateCheck-Interactive").start();
+    }
 
     /** Kick off a check from a foreground activity. Returns immediately. */
     public static void checkInBackground(final Activity activity) {
