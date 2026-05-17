@@ -42,9 +42,9 @@ public final class Settings {
     public void mouseSensitivity(float v) { sp.edit().putFloat("mouseSensitivity", v).apply(); }
 
     /** Multiplier applied to wheel ticks emitted by the two-finger / middle-button
-     *  scroll paths. 1.0 is the default (matches a normal precision touchpad);
-     *  pull lower for slower scroll, push higher for snappier. */
-    public float scrollSensitivity() { return sp.getFloat("scrollSensitivity", 1.0f); }
+     *  scroll paths. Default 4 puts the slider in the comfortable middle of
+     *  the 1–10 range; users can scale up or down from there. */
+    public float scrollSensitivity() { return sp.getFloat("scrollSensitivity", 4.0f); }
     public void scrollSensitivity(float v) { sp.edit().putFloat("scrollSensitivity", v).apply(); }
 
     public String decoder() { return sp.getString("decoder", DECODER_H264); }

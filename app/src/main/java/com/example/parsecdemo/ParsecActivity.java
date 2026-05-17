@@ -470,23 +470,23 @@ public class ParsecActivity extends Activity {
         statusView.setText("Reconnecting…");
         statusView.setVisibility(View.VISIBLE);
 
-        // Tear down the existing surface + parsec.
-        if (surface != null) {
-            surface.shutdown();
-            root.removeView(surface);
-            surface = null;
-        }
-        if (parsec != null) {
-            try { parsec.clientDestroy(); } catch (Throwable ignored) {}
-            try { parsec.destroy(); } catch (Throwable ignored) {}
-            parsec = null;
-        }
+        // KEEP THE GL SURFACE ALIVE across reconnects. Tearing it down and
+        // recreating it forces a new EGL context, and the Parsec SDK's cached
+        // GL handles from the previous context become invalid → segfault.
+        // We just detach the dead Parsec instance from the surface, dispose
+        // it on a worker, then hand the freshly-connected Parsec back to the
+        // same surface.
+        if (surface != null) surface.setParsec(null);
+        final Parsec dying = parsec;
+        parsec = null;
         heldButtonCount = 0;
         if (imeBar != null) imeBar.clearLatchedModifiers();
 
-        // Re-init and reconnect on a worker thread so a slow handshake doesn't
-        // block the UI.
         new Thread(() -> {
+            if (dying != null) {
+                try { dying.clientDestroy(); } catch (Throwable ignored) {}
+                try { dying.destroy(); } catch (Throwable ignored) {}
+            }
             final Parsec p = new Parsec();
             p.setLogCallback();
             p.init();
@@ -508,26 +508,35 @@ public class ParsecActivity extends Activity {
                     }
                     return;
                 }
-                // Success — restore the live surface and resume health checks.
+                // Success — attach the new Parsec to the existing GL surface
+                // and push current dimensions so the host frame fits the
+                // viewport without waiting for an onSurfaceChanged.
                 reconnectBackoffMs = 0L;
                 consecutiveFailureTicks = 0;
                 parsec = p;
-                statusView.setVisibility(View.GONE);
-                surface = new ClientGLSurface(getApplicationContext());
+                if (surface == null) {
+                    // Defensive: rebuild the surface only if it's truly gone
+                    // (e.g. shutdown raced an early activity teardown).
+                    surface = new ClientGLSurface(getApplicationContext());
+                    surface.setTrackpadListener((x, y, visible) -> {
+                        if (cursorView == null) return;
+                        if (!visible) { cursorView.setVisibility(View.GONE); return; }
+                        int size = cursorView.getWidth();
+                        if (size == 0) size = cursorSizePx();
+                        cursorView.setTranslationX(x - size / 2f);
+                        cursorView.setTranslationY(y - size / 2f);
+                        cursorView.setVisibility(View.VISIBLE);
+                    });
+                    root.addView(surface, 0, new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                    surface.renderInit();
+                }
                 surface.setParsec(parsec);
                 applySettingsToSurface();
-                surface.setTrackpadListener((x, y, visible) -> {
-                    if (cursorView == null) return;
-                    if (!visible) { cursorView.setVisibility(View.GONE); return; }
-                    int size = cursorView.getWidth();
-                    if (size == 0) size = cursorSizePx();
-                    cursorView.setTranslationX(x - size / 2f);
-                    cursorView.setTranslationY(y - size / 2f);
-                    cursorView.setVisibility(View.VISIBLE);
-                });
-                root.addView(surface, 0, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                surface.renderInit();
+                int w = root.getWidth();
+                int h = root.getHeight();
+                if (w > 0 && h > 0) parsec.clientSetDimensions(w, h);
+                statusView.setVisibility(View.GONE);
                 scheduleNextHealthCheck();
             });
         }, "ParsecReconnect").start();

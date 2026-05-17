@@ -184,27 +184,29 @@ public final class MouseButtonRow extends LinearLayout {
         btn.setLayoutParams(lp);
 
         if (scroll) {
-            // Middle button is multi-behavior:
-            //  • Quick tap (<220ms)           → fires a momentary MOUSE_MIDDLE
-            //  • Hold and drag-on-surface     → engaged scroll mode while held
-            //  • Long-press (>500ms)          → LATCHES scroll mode on; press
-            //                                   again (any duration) to unlatch.
-            // The latch path matters because Android's split-touch routing is
-            // unreliable while M is held with finger A — finger B on the
-            // surface doesn't always reach the SurfaceView. Latching lets the
-            // user free up the finger and scroll one-handed.
-            final long[] downAtMs = { 0L };
+            // Middle button — pure TOGGLE for scroll mode (with a long-press
+            // escape hatch for actual middle-click).
+            //
+            // The hold-to-scroll workflow Android wants us to use (finger A
+            // owns M, finger B drags the surface) is unreliable because
+            // split-touch routing doesn't always deliver finger B to the
+            // SurfaceView while finger A holds M. Worse, holding M sends
+            // ambiguous signals (the surface still sees the leftover
+            // tap-tap-hold state, the host enters middle-button auto-scroll
+            // mode in some browsers, etc).
+            //
+            // Toggle is unambiguous:
+            //   • Tap M       → engage/disengage scroll mode (latched).
+            //                   Highlighted while engaged. Any single-finger
+            //                   drag on the surface produces wheel ticks.
+            //   • Long-press  → fire a momentary MOUSE_MIDDLE press+release.
             final boolean[] scrollLatched = { false };
-            final boolean[] consumedByLatchToggle = { false };
+            final boolean[] consumedByLongPress = { false };
 
             btn.setOnLongClickListener(v -> {
-                if (scrollLatched[0]) return false; // ignore; UP will unlatch
-                scrollLatched[0] = true;
-                consumedByLatchToggle[0] = true;
-                bg.setColor(pressedBg);
-                t.setTextColor(pressedFg);
-                listener.onScrollMode(true);
+                consumedByLongPress[0] = true;
                 v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                listener.onMiddleClick();
                 return true;
             });
             btn.setLongClickable(true);
@@ -212,34 +214,43 @@ public final class MouseButtonRow extends LinearLayout {
             btn.setOnTouchListener((v, ev) -> {
                 switch (ev.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
+                        // Visual press hint; final color resolved on UP.
                         bg.setColor(pressedBg);
                         t.setTextColor(pressedFg);
-                        downAtMs[0] = System.currentTimeMillis();
-                        consumedByLatchToggle[0] = false;
+                        consumedByLongPress[0] = false;
+                        return false; // allow long-press detector to run
+                    case MotionEvent.ACTION_UP:
+                        if (consumedByLongPress[0]) {
+                            // Middle-click already fired via long-press path.
+                            // Restore visual state without flipping the latch.
+                            if (scrollLatched[0]) {
+                                bg.setColor(pressedBg);
+                                t.setTextColor(pressedFg);
+                            } else {
+                                bg.setColor(idleBg);
+                                t.setTextColor(idleFg);
+                            }
+                            return true;
+                        }
+                        // Quick tap → toggle scroll latch.
+                        scrollLatched[0] = !scrollLatched[0];
                         if (scrollLatched[0]) {
-                            // Tapping the latched button unlatches on DOWN.
-                            scrollLatched[0] = false;
-                            listener.onScrollMode(false);
+                            bg.setColor(pressedBg);
+                            t.setTextColor(pressedFg);
+                            listener.onScrollMode(true);
+                        } else {
                             bg.setColor(idleBg);
                             t.setTextColor(idleFg);
-                            return true;
+                            listener.onScrollMode(false);
                         }
-                        listener.onScrollMode(true);
-                        return false; // let long-press detection still run
-                    case MotionEvent.ACTION_UP:
+                        return true;
                     case MotionEvent.ACTION_CANCEL:
                         if (scrollLatched[0]) {
-                            // Latched — leave color/state as is; the next DOWN
-                            // unlatches.
-                            return true;
-                        }
-                        bg.setColor(idleBg);
-                        t.setTextColor(idleFg);
-                        listener.onScrollMode(false);
-                        if (ev.getActionMasked() == MotionEvent.ACTION_UP
-                                && !consumedByLatchToggle[0]) {
-                            long dt = System.currentTimeMillis() - downAtMs[0];
-                            if (dt < MIDDLE_CLICK_MAX_MS) listener.onMiddleClick();
+                            bg.setColor(pressedBg);
+                            t.setTextColor(pressedFg);
+                        } else {
+                            bg.setColor(idleBg);
+                            t.setTextColor(idleFg);
                         }
                         return true;
                 }

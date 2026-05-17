@@ -100,7 +100,7 @@ public final class SettingsPanel {
         addDivider(a, interact);
         interact.addView(rowSlider(a, "Mouse Sensitivity", s.mouseSensitivity(), 0.1f, 4f, 0.1f, s::mouseSensitivity));
         addDivider(a, interact);
-        interact.addView(rowSlider(a, "Scroll Sensitivity", s.scrollSensitivity(), 0.25f, 4f, 0.25f, s::scrollSensitivity));
+        interact.addView(rowSlider(a, "Scroll Sensitivity", s.scrollSensitivity(), 1f, 10f, 1f, s::scrollSensitivity));
         list.addView(interact);
 
         // Graphics
