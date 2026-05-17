@@ -20,6 +20,14 @@ account-based flow as the official Parsec client.
 
 ---
 
+For my other projects, check out [my website][website] and [my discord][discord]
+
+[website]: https://nomadsgalaxy.com
+
+[discord]: https://discord.gg/pqCVFkahUt
+
+---
+
 ## Download
 
 Grab the latest signed APK from [Releases](../../releases/latest) and side-load it.
@@ -61,6 +69,7 @@ cd OpenParsec
 The signed APK lands at `app/build/outputs/apk/release/app-release.apk`.
 
 Requirements:
+
 - Android SDK with API 34
 - NDK `26.3.11579264` (gradle pulls it automatically)
 - Java 17
