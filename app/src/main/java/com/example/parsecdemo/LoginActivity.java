@@ -108,15 +108,30 @@ public class LoginActivity extends AppCompatActivity {
         root.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Accreditation footer pinned to the bottom of the screen.
-        TextView credits = buildCreditsView();
+        // Accreditation footer + version pinned to the bottom of the screen.
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setGravity(Gravity.CENTER_HORIZONTAL);
+        footer.addView(buildCreditsView());
+
+        TextView version = new TextView(this);
+        version.setText("v" + BuildConfig.VERSION_NAME);
+        version.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        version.setTextColor(MaterialUi.color(this,
+                com.google.android.material.R.attr.colorOnSurfaceVariant));
+        version.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams vLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        vLp.topMargin = dp(6);
+        footer.addView(version, vLp);
+
         FrameLayout.LayoutParams credLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         credLp.bottomMargin = dp(16);
         credLp.leftMargin = dp(24);
         credLp.rightMargin = dp(24);
-        root.addView(credits, credLp);
+        root.addView(footer, credLp);
 
         setContentView(root);
 

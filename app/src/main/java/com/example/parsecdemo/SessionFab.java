@@ -140,13 +140,22 @@ public final class SessionFab {
                 downRawY = ev.getRawY();
                 downTimeMs = System.currentTimeMillis();
                 dragging = false;
-                hideMenu();
+                // Do NOT hideMenu() here. Hiding on every DOWN flipped
+                // menuOpen to false so the toggleMenu() in ACTION_UP always
+                // saw a closed menu and re-opened it, making a second FAB
+                // tap fail to dismiss. We let ACTION_UP do the real toggle.
                 return true;
             case MotionEvent.ACTION_MOVE: {
                 float nx = ev.getRawX() - touchOffsetX;
                 float ny = ev.getRawY() - touchOffsetY;
                 float dragDist = Math.abs(ev.getRawX() - downRawX) + Math.abs(ev.getRawY() - downRawY);
-                if (dragDist > dp(TAP_SLOP_DP)) dragging = true;
+                if (dragDist > dp(TAP_SLOP_DP)) {
+                    if (!dragging) {
+                        dragging = true;
+                        // Dragging the FAB closes the menu; tapping just toggles.
+                        hideMenu();
+                    }
+                }
                 if (dragging) {
                     float maxX = root.getWidth() - fab.getWidth();
                     float maxY = root.getHeight() - fab.getHeight();

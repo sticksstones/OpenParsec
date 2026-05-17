@@ -9,8 +9,8 @@ android {
         applicationId "com.example.parsecdemo"
         minSdkVersion 27
         targetSdkVersion 34
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 3
+        versionName "0.1.3"
         externalNativeBuild {
             cmake {
                 abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'

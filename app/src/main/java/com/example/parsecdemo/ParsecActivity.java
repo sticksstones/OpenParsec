@@ -258,12 +258,22 @@ public class ParsecActivity extends Activity {
     private void buildKeyboardCapture() {
         if (keyboardCapture != null) return;
         keyboardCapture = new EditText(this);
+        // TYPE_TEXT_FLAG_MULTI_LINE makes Enter insert a newline INTO the
+        // capture field instead of firing IME_ACTION_DONE (which would close
+        // the soft keyboard). The TextWatcher then translates the inserted
+        // '\n' into a Parsec ENTER keypress without dismissing the IME.
         keyboardCapture.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        keyboardCapture.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_ENTER_ACTION
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         keyboardCapture.setBackground(null);
         keyboardCapture.setCursorVisible(false);
         keyboardCapture.setAlpha(0.01f);
+        keyboardCapture.setSingleLine(false);
+        keyboardCapture.setHorizontallyScrolling(false);
         keyboardCapture.setText(CAPTURE_SENTINEL);
         keyboardCapture.setSelection(1);
 
@@ -592,19 +602,44 @@ public class ParsecActivity extends Activity {
         return totalLetterboxV / 2;
     }
 
-    /** Respect display cutouts (camera punch-outs / notches) by padding the
-     *  root so floating buttons stay clear of the cutout region. */
+    /** Cached display-cutout safe insets. Surface + root are deliberately
+     *  NOT padded with these — the host frame should render edge-to-edge
+     *  underneath any camera punch-out, matching how the host desktop fills
+     *  a normal monitor. Only the floating overlay buttons add these to
+     *  their own edge margins so they steer clear of the cutout. */
+    private int cutoutSafeLeftPx = 0;
+    private int cutoutSafeTopPx = 0;
+    private int cutoutSafeRightPx = 0;
+    private int cutoutSafeBottomPx = 0;
+
     private void applyCutoutInsets(WindowInsets insets) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return;
         android.view.DisplayCutout cutout = insets.getDisplayCutout();
-        if (cutout == null || root == null) return;
-        // Pad the root so children laid out with edge gravity steer clear of
-        // the cutout. Use the maximum on each side observed.
-        int left = cutout.getSafeInsetLeft();
-        int top = cutout.getSafeInsetTop();
-        int right = cutout.getSafeInsetRight();
-        int bottom = cutout.getSafeInsetBottom();
-        root.setPadding(left, top, right, bottom);
+        if (cutout == null) {
+            cutoutSafeLeftPx = cutoutSafeTopPx = cutoutSafeRightPx = cutoutSafeBottomPx = 0;
+        } else {
+            cutoutSafeLeftPx   = cutout.getSafeInsetLeft();
+            cutoutSafeTopPx    = cutout.getSafeInsetTop();
+            cutoutSafeRightPx  = cutout.getSafeInsetRight();
+            cutoutSafeBottomPx = cutout.getSafeInsetBottom();
+        }
+        // Surface fills the full root. Clear any padding a previous build set.
+        if (root != null) root.setPadding(0, 0, 0, 0);
+        // Re-apply button positions so they pick up the new safe-edge inset.
+        applyCutoutToOverlayButtons();
+    }
+
+    /** Add the current cutout insets to each overlay button's edge margins so
+     *  they stay clear of the punch-out without affecting the GL surface. */
+    private void applyCutoutToOverlayButtons() {
+        if (keyboardButton != null) {
+            FrameLayout.LayoutParams klp = (FrameLayout.LayoutParams) keyboardButton.getLayoutParams();
+            klp.rightMargin = dp(16) + cutoutSafeRightPx;
+            keyboardButton.setLayoutParams(klp);
+        }
+        // FAB drag bounds and mouse-button row are updated in their own paths;
+        // the FAB uses raw setX/setY so it just needs the right viewport size,
+        // which the layout listener already provides.
     }
 
     private View makeCursor() {

@@ -39,7 +39,15 @@ public class ClientGLSurface extends GLSurfaceView {
      *  trackpad is translated into mouse wheel events instead of cursor motion. */
     private volatile boolean scrollMode = false;
     private float scrollAccum = 0f;
-    private static final float SCROLL_PX_PER_TICK = 24f;
+    /** Pixels of centroid drift per emitted wheel tick. Smaller = snappier
+     *  scrolling. 8px feels close to a Mac/Windows precision touchpad — a
+     *  100px finger swipe produces ~12 wheel ticks, which on Windows with
+     *  the default 3-lines-per-tick setting is ~36 lines of scroll. */
+    private static final float SCROLL_PX_PER_TICK = 8f;
+    /** Multiplier applied to each emitted wheel tick. The Parsec SDK wheel
+     *  delta is a small integer; sending 2 per tick gives noticeably stronger
+     *  scroll without overflowing the field or causing page-warps. */
+    private static final int WHEEL_TICK_AMPLIFIER = 2;
     private float cursorX = 0f;
     private float cursorY = 0f;
     private float lastX = 0f;
@@ -344,7 +352,7 @@ public class ClientGLSurface extends GLSurfaceView {
                     if (ticks != 0) {
                         scrollAccum -= ticks * SCROLL_PX_PER_TICK;
                         // Parsec wheel: positive y = scroll down (SDK header).
-                        sendWheel(0, ticks);
+                        sendWheel(0, ticks * WHEEL_TICK_AMPLIFIER);
                     }
                 } else {
                     cursorX = clamp(cursorX + dx * sensitivity, 0, surfaceWidth - 1);
@@ -422,7 +430,7 @@ public class ClientGLSurface extends GLSurfaceView {
             twoFingerScrollAccum  -= ticksY * SCROLL_PX_PER_TICK;
             twoFingerScrollAccumX -= ticksX * SCROLL_PX_PER_TICK;
             // Parsec wheel.x: positive = scroll right; wheel.y: positive = down
-            sendWheel(ticksX, ticksY);
+            sendWheel(ticksX * WHEEL_TICK_AMPLIFIER, ticksY * WHEEL_TICK_AMPLIFIER);
             twoFingerScrollFired = true;
         }
     }

@@ -146,13 +146,31 @@ public final class SettingsPanel {
         misc.addView(rowToggle(a, "Show Keyboard Button", s.showKeyboardButton(), s::showKeyboardButton));
         list.addView(misc);
 
-        TextView ver = new TextView(a);
-        ver.setText("parsec-sdk · Material 3 demo");
-        ver.setTextColor(MaterialUi.color(a, com.google.android.material.R.attr.colorOnSurfaceVariant));
-        ver.setGravity(Gravity.CENTER);
-        ver.setPadding(0, dp(a, 16), 0, dp(a, 8));
-        ver.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        list.addView(ver);
+        // About — version + manual update check
+        list.addView(catTitle(a, "About"));
+        LinearLayout about = catCard(a);
+        about.addView(rowAction(a, "Version", "v" + BuildConfig.VERSION_NAME, null));
+        addDivider(a, about);
+        about.addView(rowAction(a, "Check for updates",
+                "Look for a newer release on GitHub now",
+                () -> {
+                    // Bypass the 24h debounce by clearing the last-check timestamp.
+                    a.getSharedPreferences("openparsec_update", Context.MODE_PRIVATE)
+                            .edit()
+                            .remove("lastCheckMs")
+                            .remove("dismissedTag")
+                            .apply();
+                    UpdateChecker.checkInBackground(a);
+                }));
+        list.addView(about);
+
+        TextView credit = new TextView(a);
+        credit.setText("OpenParsec Android · by NomadsGalaxy");
+        credit.setTextColor(MaterialUi.color(a, com.google.android.material.R.attr.colorOnSurfaceVariant));
+        credit.setGravity(Gravity.CENTER);
+        credit.setPadding(0, dp(a, 16), 0, dp(a, 8));
+        credit.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        list.addView(credit);
 
         sv.addView(list);
         inside.addView(sv, new LinearLayout.LayoutParams(
@@ -283,6 +301,41 @@ public final class SettingsPanel {
         barLp.rightMargin = dp(a, 8);
         row.addView(bar, barLp);
         row.addView(val);
+        return row;
+    }
+
+    public interface Action { void run(); }
+
+    /** Two-line row showing a label and a subtitle. If {@code onClick} is
+     *  non-null the entire row is tappable; if null the row is informational
+     *  only (e.g. version display). */
+    private static View rowAction(final Context a, String label, String subtitle,
+                                  final Action onClick) {
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.VERTICAL);
+        int p = dp(a, 14);
+        row.setPadding(p + dp(a, 2), p, p + dp(a, 2), p);
+
+        TextView title = new TextView(a);
+        title.setText(label);
+        title.setTextColor(MaterialUi.color(a, com.google.android.material.R.attr.colorOnSurface));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        row.addView(title);
+
+        TextView sub = new TextView(a);
+        sub.setText(subtitle);
+        sub.setTextColor(MaterialUi.color(a, onClick != null
+                ? com.google.android.material.R.attr.colorPrimary
+                : com.google.android.material.R.attr.colorOnSurfaceVariant));
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        sub.setPadding(0, dp(a, 2), 0, 0);
+        row.addView(sub);
+
+        if (onClick != null) {
+            row.setClickable(true);
+            row.setFocusable(true);
+            row.setOnClickListener(v -> onClick.run());
+        }
         return row;
     }
 
