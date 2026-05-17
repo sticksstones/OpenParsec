@@ -3,6 +3,7 @@ package com.example.parsecdemo;
 import android.content.Context;
 import android.opengl.GLSurfaceView;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 
 import javax.microedition.khronos.opengles.GL10;
 
@@ -94,6 +95,27 @@ public class ClientGLSurface extends GLSurfaceView {
     /** Left button is currently held by direct-touch mode (1-finger drag). */
     private boolean directLeftHeld = false;
 
+    // ----- Pinch zoom + pan (RustDesk-style, opt-in) -----
+    /** Gating flag. When OFF (default), pinch / two-finger gestures pass
+     *  through to the regular trackpad-style touch handler so the host
+     *  sees them as normal scroll/touch input — no view-level zoom. When
+     *  ON, two fingers zoom + pan the local GL surface. Toggled from the
+     *  in-session FAB menu. */
+    private volatile boolean zoomEnabled = false;
+    private ScaleGestureDetector scaleDetector;
+    private float zoom = 1.0f;
+    private float panX = 0f, panY = 0f;
+    private static final float MIN_ZOOM = 1.0f;
+    private static final float MAX_ZOOM = 5.0f;
+    /** Triggered when the user is actively pinching. Suppresses cursor /
+     *  scroll handling so the pinch doesn't double-fire as e.g. a wheel
+     *  event. */
+    private boolean pinching = false;
+    /** True for the duration of a 2-finger gesture once we've decided it's
+     *  a PAN (not a scroll). Switching mid-gesture would feel jittery, so
+     *  the decision sticks until all fingers lift. */
+    private boolean panning = false;
+
     private int hostWidth = 1920;
     private int hostHeight = 1080;
 
@@ -101,7 +123,95 @@ public class ClientGLSurface extends GLSurfaceView {
 
     public ClientGLSurface(Context context) {
         super(context);
+        scaleDetector = new ScaleGestureDetector(context,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override public boolean onScaleBegin(ScaleGestureDetector d) {
+                        pinching = true;
+                        return true;
+                    }
+                    @Override public boolean onScale(ScaleGestureDetector d) {
+                        float prevZoom = zoom;
+                        float newZoom = clamp(zoom * d.getScaleFactor(), MIN_ZOOM, MAX_ZOOM);
+                        if (newZoom == prevZoom) return true;
+                        // Zoom around the gesture focal point so the pixel
+                        // under the user's fingers stays put.
+                        float fx = d.getFocusX();
+                        float fy = d.getFocusY();
+                        float ratio = newZoom / prevZoom;
+                        // Solve: new_pan + fx * new_zoom = old_pan + fx * old_zoom
+                        // (we want the host pixel currently under fx to remain
+                        // under fx after the scale change).
+                        panX = fx - (fx - panX) * ratio;
+                        panY = fy - (fy - panY) * ratio;
+                        zoom = newZoom;
+                        clampPanAndApply();
+                        return true;
+                    }
+                    @Override public void onScaleEnd(ScaleGestureDetector d) {
+                        pinching = false;
+                    }
+                });
     }
+
+    /** Apply current zoom/pan as View transforms. Touch events are
+     *  matrix-inverted by Android automatically, so motion coordinates
+     *  reported to onTouchEvent stay in the un-transformed local space —
+     *  no manual remapping required for cursor / direct-touch dispatch. */
+    private void applyTransform() {
+        setPivotX(0f);
+        setPivotY(0f);
+        setScaleX(zoom);
+        setScaleY(zoom);
+        setTranslationX(panX);
+        setTranslationY(panY);
+    }
+
+    /** Clamp pan so the scaled surface can't be dragged completely off the
+     *  visible area. At zoom=1 this snaps pan to (0,0). */
+    private void clampPanAndApply() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w > 0 && h > 0) {
+            float scaledW = w * zoom;
+            float scaledH = h * zoom;
+            float minX = w - scaledW; // negative or zero
+            float minY = h - scaledH;
+            if (zoom <= 1.001f) {
+                panX = 0f;
+                panY = 0f;
+            } else {
+                if (panX > 0) panX = 0;
+                if (panX < minX) panX = minX;
+                if (panY > 0) panY = 0;
+                if (panY < minY) panY = minY;
+            }
+        }
+        applyTransform();
+    }
+
+    /** Reset zoom/pan back to 1× / centered. Called from the FAB menu. */
+    public void resetZoom() {
+        zoom = 1.0f;
+        panX = panY = 0f;
+        clampPanAndApply();
+    }
+
+    public boolean isZoomed() { return zoom > 1.001f; }
+
+    /** Enable / disable view-level pinch zoom. When disabled, two-finger
+     *  gestures fall through to the regular trackpad / direct-touch path
+     *  (which translates them to host scroll events). Snaps view back to
+     *  1× when toggled off so the user doesn't have a permanently-zoomed
+     *  surface after disabling. */
+    public void setZoomEnabled(boolean enabled) {
+        this.zoomEnabled = enabled;
+        if (!enabled) {
+            pinching = false;
+            panning = false;
+            resetZoom();
+        }
+    }
+    public boolean isZoomEnabled() { return zoomEnabled; }
 
     public void setParsec(Parsec parsec) {
         synchronized (parsecLock) {
@@ -272,9 +382,49 @@ public class ClientGLSurface extends GLSurfaceView {
     public boolean onTouchEvent(MotionEvent ev) {
         super.onTouchEvent(ev);
         if (!parsecAlive) return true;
+
+        // Zoom mode is opt-in via the FAB. When it's OFF, every touch flows
+        // straight to the regular trackpad / direct handler — pinches become
+        // scroll/touch events on the host, matching how a real precision
+        // touchpad behaves.
+        if (zoomEnabled) {
+            scaleDetector.onTouchEvent(ev);
+
+            int pointers = ev.getPointerCount();
+            int action = ev.getActionMasked();
+
+            if (action == MotionEvent.ACTION_POINTER_DOWN && pointers == 2) {
+                // While zoom mode is active, the 2-finger drag pans the
+                // surface unconditionally (matches RustDesk). At 1× the pan
+                // is clamped to (0,0) so it's a no-op; the user has to pinch
+                // first.
+                panning = true;
+                panLastCx = centroidX(ev);
+                panLastCy = centroidY(ev);
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                panning = false;
+            }
+
+            if (panning && pointers >= 2 && action == MotionEvent.ACTION_MOVE
+                    && !pinching) {
+                float cx = centroidX(ev);
+                float cy = centroidY(ev);
+                panX += cx - panLastCx;
+                panY += cy - panLastCy;
+                panLastCx = cx;
+                panLastCy = cy;
+                clampPanAndApply();
+                return true;
+            }
+            if (pinching || panning) return true;
+        }
+
         if (trackpadMode) return onTrackpadEvent(ev);
         return onDirectTouchEvent(ev);
     }
+
+    private float panLastCx = 0f, panLastCy = 0f;
 
     private boolean onDirectTouchEvent(MotionEvent ev) {
         int action = ev.getActionMasked();

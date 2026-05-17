@@ -136,6 +136,11 @@ public final class SettingsPanel {
                     androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
                             ParsecApp.nightModeFor(v));
                 }));
+        addDivider(a, appearance);
+        appearance.addView(rowPicker(a, "Orientation",
+                new String[]{"Auto", "Landscape", "Portrait"},
+                new String[]{Settings.ORIENT_AUTO, Settings.ORIENT_LANDSCAPE, Settings.ORIENT_PORTRAIT},
+                s.orientation(), s::orientation));
         list.addView(appearance);
 
         // Misc

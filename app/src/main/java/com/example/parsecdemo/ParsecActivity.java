@@ -110,7 +110,7 @@ public class ParsecActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         settings = new Settings(this);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        applyOrientationFromSettings();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // SOFT_INPUT_ADJUST_RESIZE causes WindowInsets.ime() to dispatch so
         // we can react when the soft keyboard opens.
@@ -228,6 +228,17 @@ public class ParsecActivity extends Activity {
         items.add(new SessionFab.Item(
                 virtualGamepad != null ? "Hide gamepad" : "Show gamepad",
                 this::toggleVirtualGamepad));
+        // Zoom is opt-in. When the toggle is OFF, pinch falls through to the
+        // regular touch handler so the host receives a normal trackpad-style
+        // scroll. Toggle ON to enable view-level pinch/pan without touching
+        // the host stream.
+        items.add(new SessionFab.Item(
+                surface != null && surface.isZoomEnabled() ? "Zoom: On" : "Zoom: Off",
+                () -> {
+                    if (surface == null) return;
+                    surface.setZoomEnabled(!surface.isZoomEnabled());
+                    rebuildSessionFab();
+                }));
         items.add(new SessionFab.Item("Reconnect", this::reconnectSession));
         items.add(new SessionFab.Item("Disconnect", true, this::finish));
 
@@ -873,6 +884,22 @@ public class ParsecActivity extends Activity {
         return Math.max(dp(8), Math.round(dp(18) * settings.cursorScale()));
     }
 
+    /** Apply the user's orientation preference (auto / landscape / portrait)
+     *  via setRequestedOrientation. Re-callable from Settings → applies live. */
+    private void applyOrientationFromSettings() {
+        String mode = settings.orientation();
+        int orient;
+        switch (mode) {
+            case Settings.ORIENT_LANDSCAPE:
+                orient = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE; break;
+            case Settings.ORIENT_PORTRAIT:
+                orient = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT; break;
+            default:
+                orient = ActivityInfo.SCREEN_ORIENTATION_FULL_USER; break;
+        }
+        setRequestedOrientation(orient);
+    }
+
     private void applySettingsToSurface() {
         if (surface == null) return;
         surface.setTrackpadMode(settings.isTouchpadMode());
@@ -890,6 +917,9 @@ public class ParsecActivity extends Activity {
         if (fab != null) fab.setVisible(!settings.noOverlay());
         updateMouseButtonRow();
         updateKeyboardButton();
+        // Re-apply orientation in case user changed it from the in-session
+        // settings panel.
+        applyOrientationFromSettings();
     }
 
     private void openSettings() {

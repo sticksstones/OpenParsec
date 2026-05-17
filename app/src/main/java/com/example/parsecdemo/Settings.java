@@ -68,6 +68,17 @@ public final class Settings {
     public boolean showKeyboardButton() { return sp.getBoolean("showKeyboardButton", true); }
     public void showKeyboardButton(boolean v) { sp.edit().putBoolean("showKeyboardButton", v).apply(); }
 
+    /** Orientation policy.
+     *  - "auto"      : follow device sensor (RustDesk default — both work)
+     *  - "landscape" : force sensorLandscape
+     *  - "portrait"  : force sensorPortrait
+     */
+    public static final String ORIENT_AUTO      = "auto";
+    public static final String ORIENT_LANDSCAPE = "landscape";
+    public static final String ORIENT_PORTRAIT  = "portrait";
+    public String orientation() { return sp.getString("orientation", ORIENT_AUTO); }
+    public void orientation(String v) { sp.edit().putString("orientation", v).apply(); }
+
     public String rightClickPosition() { return sp.getString("rightClickPosition", RIGHTCLICK_FIRST); }
     public void rightClickPosition(String v) { sp.edit().putString("rightClickPosition", v).apply(); }
 
