@@ -39,6 +39,26 @@ public final class ParsecApi {
         public AuthResult(ClientInfo i, boolean t, String e) { info = i; tfaRequired = t; error = e; }
     }
 
+    public static final class SelfUser {
+        public final int id;
+        public final String name;
+        public SelfUser(int i, String n) { id = i; name = n; }
+    }
+
+    public static final class Friend {
+        public final int userId;
+        public final String userName;
+        public Friend(int u, String n) { userId = u; userName = n; }
+    }
+
+    /** Avatar URL for a Parsec user. Mirrors the iOS client's image URL
+     *  shape — Parsec's avatar CDN auto-resizes via the path params. */
+    public static String avatarUrl(int userId) {
+        return "https://parsecusercontent.com/cors-resize-image/"
+                + "w=96,h=96,fit=crop,background=white,q=90,f=jpeg/avatars/"
+                + userId + "/avatar";
+    }
+
     public static AuthResult login(String email, String password, String tfa) throws Exception {
         JSONObject body = new JSONObject();
         body.put("email", email);
@@ -68,6 +88,61 @@ public final class ParsecApi {
             boolean tfaReq = j.optBoolean("tfa_required", false);
             String err = j.optString("error", "HTTP " + code);
             return new AuthResult(null, tfaReq, err);
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    public static SelfUser getSelfInfo(String sessionId) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/me").openConnection();
+        try {
+            c.setRequestMethod("GET");
+            c.setRequestProperty("Authorization", "Bearer " + sessionId);
+            c.setRequestProperty("User-Agent", USER_AGENT);
+            int code = c.getResponseCode();
+            String resp = readAll(code >= 400 ? c.getErrorStream() : c.getInputStream());
+            if (code != 200) throw new RuntimeException("/me HTTP " + code + ": " + resp);
+            JSONObject j = new JSONObject(resp);
+            JSONObject d = j.optJSONObject("data");
+            if (d == null) d = j; // tolerate either {data:{...}} or flat
+            return new SelfUser(d.optInt("id"), d.optString("name", ""));
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    public static List<Friend> listFriends(String sessionId) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/friendships").openConnection();
+        try {
+            c.setRequestMethod("GET");
+            c.setRequestProperty("Authorization", "Bearer " + sessionId);
+            c.setRequestProperty("User-Agent", USER_AGENT);
+            int code = c.getResponseCode();
+            String resp = readAll(code >= 400 ? c.getErrorStream() : c.getInputStream());
+            if (code != 200) throw new RuntimeException("/friendships HTTP " + code + ": " + resp);
+            JSONObject j = new JSONObject(resp);
+            JSONArray arr = j.optJSONArray("data");
+            List<Friend> out = new ArrayList<>();
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject f = arr.getJSONObject(i);
+                    int uid = f.optInt("user_id");
+                    // The Parsec API has shipped both "user_name" and "name"
+                    // for the friend's display name at different times. Try
+                    // user_name first, then name, then user.name as a last
+                    // resort — the iOS client only checks user_name so the
+                    // "avatar shows but name is empty" symptom we get on
+                    // Android comes from the field actually being "name".
+                    String name = f.optString("user_name", null);
+                    if (name == null || name.isEmpty()) name = f.optString("name", "");
+                    if (name.isEmpty()) {
+                        JSONObject u = f.optJSONObject("user");
+                        if (u != null) name = u.optString("name", "");
+                    }
+                    out.add(new Friend(uid, name));
+                }
+            }
+            return out;
         } finally {
             c.disconnect();
         }

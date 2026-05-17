@@ -47,6 +47,9 @@ public class HostListActivity extends AppCompatActivity {
     private Tab currentTab = Tab.HOSTS;
     private ScrollView hostsScroll;
     private ScrollView friendsScroll;
+    private LinearLayout friendsContainer;
+    private TextView friendsHeader;
+    private boolean friendsLoaded = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -192,21 +195,158 @@ public class HostListActivity extends AppCompatActivity {
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(MaterialUi.color(this,
                 com.google.android.material.R.attr.colorSurface));
+
         LinearLayout colL = new LinearLayout(this);
         colL.setOrientation(LinearLayout.VERTICAL);
         colL.setPadding(dp(16), dp(16), dp(16), dp(16));
-        colL.setGravity(Gravity.CENTER);
 
-        TextView empty = new TextView(this);
-        empty.setText("Friends will appear here");
-        empty.setTextColor(MaterialUi.color(this,
+        friendsHeader = new TextView(this);
+        friendsHeader.setText("Loading…");
+        friendsHeader.setTextColor(MaterialUi.color(this,
                 com.google.android.material.R.attr.colorOnSurfaceVariant));
-        empty.setGravity(Gravity.CENTER);
-        empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        colL.addView(empty);
+        friendsHeader.setGravity(Gravity.CENTER);
+        friendsHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hLp.bottomMargin = dp(12);
+        colL.addView(friendsHeader, hLp);
+
+        friendsContainer = new LinearLayout(this);
+        friendsContainer.setOrientation(LinearLayout.VERTICAL);
+        friendsContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+        colL.addView(friendsContainer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         sv.addView(colL);
         return sv;
+    }
+
+    private void loadFriendsIfNeeded() {
+        if (friendsLoaded) return;
+        friendsLoaded = true;
+        loadFriends();
+    }
+
+    private void loadFriends() {
+        if (friendsContainer == null) return;
+        friendsContainer.removeAllViews();
+        if (friendsHeader != null) friendsHeader.setText("Loading…");
+
+        new AsyncTask<Void, Void, FriendsResult>() {
+            @Override protected FriendsResult doInBackground(Void... v) {
+                FriendsResult r = new FriendsResult();
+                try { r.self = ParsecApi.getSelfInfo(sessionId); }
+                catch (Exception e) { r.error = e; }
+                try { r.friends = ParsecApi.listFriends(sessionId); }
+                catch (Exception e) { if (r.error == null) r.error = e; }
+                return r;
+            }
+            @Override protected void onPostExecute(FriendsResult r) {
+                if (r.error != null && r.self == null
+                        && (r.friends == null || r.friends.isEmpty())) {
+                    friendsHeader.setText("Couldn't load friends");
+                    return;
+                }
+                if (r.self != null) {
+                    friendsContainer.addView(makeUserCard(
+                            "You", r.self.id, r.self.name));
+                }
+                int count = r.friends == null ? 0 : r.friends.size();
+                friendsHeader.setText(count + " " + (count == 1 ? "friend" : "friends"));
+                if (count > 0) {
+                    TextView section = new TextView(HostListActivity.this);
+                    section.setText("Friends");
+                    section.setTextColor(MaterialUi.color(HostListActivity.this,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant));
+                    section.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                    section.setPadding(dp(8), dp(16), 0, dp(8));
+                    LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
+                            Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(540)),
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+                    sLp.gravity = Gravity.CENTER_HORIZONTAL;
+                    friendsContainer.addView(section, sLp);
+                    for (ParsecApi.Friend f : r.friends) {
+                        friendsContainer.addView(makeUserCard(
+                                f.userName == null || f.userName.isEmpty()
+                                        ? "User" : f.userName,
+                                f.userId, null));
+                    }
+                }
+            }
+        }.execute();
+    }
+
+    private static final class FriendsResult {
+        ParsecApi.SelfUser self;
+        java.util.List<ParsecApi.Friend> friends;
+        Exception error;
+    }
+
+    /** Card layout shared by self + friends: round-cornered avatar + username#id text. */
+    private View makeUserCard(String name, int userId, String emailIfSelf) {
+        MaterialCardView card = new MaterialCardView(this);
+        card.setCardBackgroundColor(MaterialUi.color(this,
+                com.google.android.material.R.attr.colorSurfaceContainerHigh));
+        card.setRadius(dp(20));
+        card.setStrokeWidth(0);
+        card.setCardElevation(dp(0));
+        card.setUseCompatPadding(false);
+
+        LinearLayout inner = new LinearLayout(this);
+        inner.setOrientation(LinearLayout.HORIZONTAL);
+        inner.setGravity(Gravity.CENTER_VERTICAL);
+        int p = dp(14);
+        inner.setPadding(p, p, p, p);
+
+        FrameLayout avatarWrap = new FrameLayout(this);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.RECTANGLE);
+        g.setColor(MaterialUi.color(this,
+                com.google.android.material.R.attr.colorPrimaryContainer));
+        g.setCornerRadius(dp(14));
+        avatarWrap.setBackground(g);
+        avatarWrap.setClipToOutline(true);
+        ImageView ic = new ImageView(this);
+        ic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        avatarWrap.addView(ic, new FrameLayout.LayoutParams(
+                dp(48), dp(48), Gravity.CENTER));
+        LinearLayout.LayoutParams awLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        awLp.rightMargin = dp(14);
+        inner.addView(avatarWrap, awLp);
+        AvatarLoader.into(ic, ParsecApi.avatarUrl(userId), R.drawable.parsec_logo);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView nameView = new TextView(this);
+        nameView.setText(name + "#" + userId);
+        nameView.setTextColor(MaterialUi.color(this,
+                com.google.android.material.R.attr.colorOnSurface));
+        nameView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        nameView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        textCol.addView(nameView);
+
+        if (emailIfSelf != null) {
+            TextView role = new TextView(this);
+            role.setText(emailIfSelf);
+            role.setTextColor(MaterialUi.color(this,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant));
+            role.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            textCol.addView(role);
+        }
+
+        LinearLayout.LayoutParams tcLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        inner.addView(textCol, tcLp);
+
+        card.addView(inner);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(540)),
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.CENTER_HORIZONTAL;
+        lp.bottomMargin = dp(12);
+        card.setLayoutParams(lp);
+        return card;
     }
 
     // ===== Bottom tabs — Material BottomNavigationView =====
@@ -230,6 +370,7 @@ public class HostListActivity extends AppCompatActivity {
         boolean h = t == Tab.HOSTS;
         hostsScroll.setVisibility(h ? View.VISIBLE : View.GONE);
         friendsScroll.setVisibility(h ? View.GONE : View.VISIBLE);
+        if (!h) loadFriendsIfNeeded();
     }
 
     private int dp(int v) {
