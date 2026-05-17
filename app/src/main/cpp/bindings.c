@@ -195,3 +195,14 @@ Java_parsec_bindings_Parsec_clientSendMouseButton(JNIEnv *env, jobject instance,
 
     return (jint) ParsecClientSendMessage(parsec, &msg);
 }
+
+JNIEXPORT jboolean JNICALL
+Java_parsec_bindings_Parsec_clientHasNetworkFailure(JNIEnv *env, jobject instance)
+{
+    Parsec *parsec = getPointer(env, instance, "parsec");
+    if (!parsec) return JNI_TRUE;
+    ParsecClientStatus status = {0};
+    ParsecStatus rc = ParsecClientGetStatus(parsec, &status);
+    if (rc != PARSEC_OK) return JNI_TRUE;
+    return status.networkFailure ? JNI_TRUE : JNI_FALSE;
+}

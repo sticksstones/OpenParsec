@@ -82,6 +82,25 @@ public class ParsecActivity extends Activity {
     private String connSessionId;
     private String connPeerId;
 
+    // ----- Auto-reconnect watchdog -----
+    /** Looper handler that runs the health check on the main thread. */
+    private android.os.Handler healthHandler;
+    private final Runnable healthCheck = this::tickHealthCheck;
+    /** True while we're in the middle of a reconnect handshake; suppresses
+     *  re-entry from the watchdog. */
+    private boolean isReconnecting = false;
+    /** Consecutive ticks where networkFailure was reported. We require two
+     *  in a row to avoid bouncing on a one-off blip. */
+    private int consecutiveFailureTicks = 0;
+    /** Backoff after a failed reconnect — keeps doubling until success or
+     *  cap. Reset to base on success. */
+    private long reconnectBackoffMs = 0L;
+    private static final long HEALTH_CHECK_INTERVAL_MS = 2500L;
+    private static final long INITIAL_CHECK_DELAY_MS   = 5000L;
+    private static final long RECONNECT_BACKOFF_BASE_MS = 2000L;
+    private static final long RECONNECT_BACKOFF_MAX_MS  = 15000L;
+    private static final int  FAILURE_TICKS_TO_RECONNECT = 2;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -178,6 +197,7 @@ public class ParsecActivity extends Activity {
                     debugGrid = DebugGrid.installCornerAnchors(this, root);
                 });
             }
+            startHealthWatchdog();
         } else {
             statusView.setText("clientConnect failed (code " + e + ")");
             Toast.makeText(this, "Connect failed: " + e, Toast.LENGTH_LONG).show();
@@ -392,6 +412,51 @@ public class ParsecActivity extends Activity {
         sendWithAccessoryModifiers(parsecKey, withShift);
     }
 
+    private void tickHealthCheck() {
+        if (isFinishing() || isDestroyed()) return;
+        if (isReconnecting || parsec == null) {
+            scheduleNextHealthCheck();
+            return;
+        }
+        boolean failure;
+        try {
+            failure = parsec.clientHasNetworkFailure();
+        } catch (Throwable t) {
+            failure = true;
+        }
+        if (failure) {
+            consecutiveFailureTicks++;
+            if (consecutiveFailureTicks >= FAILURE_TICKS_TO_RECONNECT) {
+                Log.d("ParsecHealth", "auto-reconnect triggered after "
+                        + consecutiveFailureTicks + " failure ticks");
+                consecutiveFailureTicks = 0;
+                reconnectSession();
+                return; // reconnectSession reschedules
+            }
+        } else {
+            // Healthy — reset both the streak and the backoff.
+            consecutiveFailureTicks = 0;
+            reconnectBackoffMs = 0L;
+        }
+        scheduleNextHealthCheck();
+    }
+
+    private void scheduleNextHealthCheck() {
+        if (healthHandler == null) return;
+        healthHandler.removeCallbacks(healthCheck);
+        healthHandler.postDelayed(healthCheck, HEALTH_CHECK_INTERVAL_MS);
+    }
+
+    private void startHealthWatchdog() {
+        if (healthHandler == null) healthHandler = new android.os.Handler(getMainLooper());
+        healthHandler.removeCallbacks(healthCheck);
+        healthHandler.postDelayed(healthCheck, INITIAL_CHECK_DELAY_MS);
+    }
+
+    private void stopHealthWatchdog() {
+        if (healthHandler != null) healthHandler.removeCallbacks(healthCheck);
+    }
+
     /** Tear down the current Parsec session and reconnect using the cached
      *  sessionId / peerId. Lets the user recover from "session died while
      *  backgrounded / network dropped" without going back to the host list. */
@@ -400,6 +465,8 @@ public class ParsecActivity extends Activity {
             Toast.makeText(this, "No saved connection to reconnect.", Toast.LENGTH_SHORT).show();
             return;
         }
+        if (isReconnecting) return;
+        isReconnecting = true;
         statusView.setText("Reconnecting…");
         statusView.setVisibility(View.VISIBLE);
 
@@ -425,13 +492,25 @@ public class ParsecActivity extends Activity {
             p.init();
             final int rc = p.clientConnect(connSessionId, connPeerId);
             runOnUiThread(() -> {
+                isReconnecting = false;
                 if (rc != 0) {
-                    statusView.setText("Reconnect failed (code " + rc + ")");
-                    Toast.makeText(this, "Reconnect failed: " + rc, Toast.LENGTH_LONG).show();
+                    // Failed — bump backoff and schedule another attempt.
+                    long next = Math.max(reconnectBackoffMs * 2,
+                            RECONNECT_BACKOFF_BASE_MS);
+                    reconnectBackoffMs = Math.min(next, RECONNECT_BACKOFF_MAX_MS);
+                    statusView.setText("Reconnect failed (code " + rc + ") — retrying in "
+                            + (reconnectBackoffMs / 1000) + "s");
                     try { p.clientDestroy(); } catch (Throwable ignored) {}
                     try { p.destroy(); } catch (Throwable ignored) {}
+                    if (healthHandler != null) {
+                        healthHandler.removeCallbacks(healthCheck);
+                        healthHandler.postDelayed(this::reconnectSession, reconnectBackoffMs);
+                    }
                     return;
                 }
+                // Success — restore the live surface and resume health checks.
+                reconnectBackoffMs = 0L;
+                consecutiveFailureTicks = 0;
                 parsec = p;
                 statusView.setVisibility(View.GONE);
                 surface = new ClientGLSurface(getApplicationContext());
@@ -449,6 +528,7 @@ public class ParsecActivity extends Activity {
                 root.addView(surface, 0, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 surface.renderInit();
+                scheduleNextHealthCheck();
             });
         }, "ParsecReconnect").start();
     }
@@ -926,6 +1006,9 @@ public class ParsecActivity extends Activity {
     @Override
     protected void onPause() {
         if (surface != null) surface.onPause();
+        // Pause the watchdog while backgrounded; checking a dead session over
+        // and over while the OS has the network paused is pointless.
+        stopHealthWatchdog();
         super.onPause();
     }
 
@@ -934,10 +1017,15 @@ public class ParsecActivity extends Activity {
         super.onResume();
         if (surface != null) surface.onResume();
         applyImmersive();
+        // Resume the watchdog. If we came back from background and the session
+        // died, the first health tick (5s after resume) will catch it and
+        // auto-reconnect within ~2 ticks.
+        if (parsec != null) startHealthWatchdog();
     }
 
     @Override
     protected void onDestroy() {
+        stopHealthWatchdog();
         if (surface != null) surface.shutdown();
         if (parsec != null) {
             parsec.clientDestroy();

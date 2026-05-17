@@ -28,4 +28,8 @@ public class Parsec {
     public native int clientSendMouseButton(int button, boolean pressed);
     public native int clientSendMouseWheel(int x, int y);
     public native int clientSendKeyboard(int keyCode, int keyMod, boolean pressed);
+    /** True if the SDK is currently reporting a network failure on the client
+     *  side (no host frames, transport down). Used by the activity-level
+     *  health watchdog to trigger an auto-reconnect. */
+    public native boolean clientHasNetworkFailure();
 }
