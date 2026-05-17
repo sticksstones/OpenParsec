@@ -18,8 +18,6 @@ account-based flow as the official Parsec client.
 [upstream]: https://github.com/hugeBlack/OpenParsec
 [upstream-author]: https://github.com/hugeBlack
 
----
-
 For my other projects, check out [my website][website] and [my discord][discord]
 
 [website]: https://nomadsgalaxy.com
