@@ -1,4 +1,4 @@
-# OpenParsec for Android
+# <p align="center">![icon](app/src/main/res/drawable/parsec_logo.png) ![OpenParsec](app/src/main/res/drawable/openparsec_wordmark.png)</p>
 
 [![GitHub stars](https://img.shields.io/github/stars/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/nomadsgalaxy/OpenParsec?style=flat-square)](https://github.com/nomadsgalaxy/OpenParsec/network/members)
