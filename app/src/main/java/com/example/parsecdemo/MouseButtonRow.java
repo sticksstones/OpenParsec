@@ -29,6 +29,9 @@ public final class MouseButtonRow extends LinearLayout {
         void onButton(int parsecButton, boolean pressed);
         /** Toggle scroll mode (engaged while user holds the middle button). */
         void onScrollMode(boolean on);
+        /** Quick tap on the middle button fires a middle-click on the host;
+         *  longer hold engages scroll mode instead. */
+        void onMiddleClick();
         /** User finished dragging the row; final position should be persisted. */
         void onRepositioned(float xPx, float yPx);
     }
@@ -180,26 +183,58 @@ public final class MouseButtonRow extends LinearLayout {
         lp.rightMargin = dp(4);
         btn.setLayoutParams(lp);
 
-        btn.setOnTouchListener((v, ev) -> {
-            switch (ev.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    bg.setColor(pressedBg);
-                    t.setTextColor(pressedFg);
-                    if (scroll) listener.onScrollMode(true);
-                    else listener.onButton(parsecButton, true);
-                    return true;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    bg.setColor(idleBg);
-                    t.setTextColor(idleFg);
-                    if (scroll) listener.onScrollMode(false);
-                    else listener.onButton(parsecButton, false);
-                    return true;
-            }
-            return false;
-        });
+        if (scroll) {
+            // Middle button doubles as: quick tap = middle-click, hold = scroll
+            // mode (drag a second finger on the trackpad surface to spin the
+            // wheel). Mirrors a real mouse wheel that's also a clickable
+            // button.
+            final long[] downAtMs = { 0L };
+            btn.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        bg.setColor(pressedBg);
+                        t.setTextColor(pressedFg);
+                        downAtMs[0] = System.currentTimeMillis();
+                        listener.onScrollMode(true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        bg.setColor(idleBg);
+                        t.setTextColor(idleFg);
+                        listener.onScrollMode(false);
+                        if (ev.getActionMasked() == MotionEvent.ACTION_UP) {
+                            long dt = System.currentTimeMillis() - downAtMs[0];
+                            if (dt < MIDDLE_CLICK_MAX_MS) listener.onMiddleClick();
+                        }
+                        return true;
+                }
+                return false;
+            });
+        } else {
+            btn.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        bg.setColor(pressedBg);
+                        t.setTextColor(pressedFg);
+                        listener.onButton(parsecButton, true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        bg.setColor(idleBg);
+                        t.setTextColor(idleFg);
+                        listener.onButton(parsecButton, false);
+                        return true;
+                }
+                return false;
+            });
+        }
         return btn;
     }
+
+    /** Below this duration on the middle button, treat the gesture as a tap
+     *  and fire a middle-click after release. Above it, the user was holding
+     *  to scroll and no click should fire. */
+    private static final long MIDDLE_CLICK_MAX_MS = 220L;
 
     private View divider(Context ctx) {
         View v = new View(ctx);

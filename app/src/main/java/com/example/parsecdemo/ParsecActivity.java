@@ -212,6 +212,12 @@ public class ParsecActivity extends Activity {
                 if (surface == null) return;
                 surface.setScrollMode(on);
             }
+            @Override public void onMiddleClick() {
+                if (surface == null) return;
+                // Fire a momentary middle-button press+release on the host.
+                surface.sendButtonExternal(2 /* MOUSE_MIDDLE */, true);
+                surface.sendButtonExternal(2 /* MOUSE_MIDDLE */, false);
+            }
             @Override public void onRepositioned(float xPx, float yPx) {
                 // User chose this spot — adopt it as the new resting position
                 // and forget any IME-temporary backup.
