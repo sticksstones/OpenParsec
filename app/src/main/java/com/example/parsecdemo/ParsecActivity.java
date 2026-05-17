@@ -816,6 +816,7 @@ public class ParsecActivity extends Activity {
         if (surface == null) return;
         surface.setTrackpadMode(settings.isTouchpadMode());
         surface.setSensitivity(settings.mouseSensitivity());
+        surface.setScrollSensitivity(settings.scrollSensitivity());
         surface.setHostDimensions(settings.hostWidth(), settings.hostHeight());
         if (cursorView != null) {
             int sz = cursorSizePx();

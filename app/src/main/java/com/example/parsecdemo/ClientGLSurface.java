@@ -44,10 +44,14 @@ public class ClientGLSurface extends GLSurfaceView {
      *  100px finger swipe produces ~12 wheel ticks, which on Windows with
      *  the default 3-lines-per-tick setting is ~36 lines of scroll. */
     private static final float SCROLL_PX_PER_TICK = 8f;
-    /** Multiplier applied to each emitted wheel tick. The Parsec SDK wheel
-     *  delta is a small integer; sending 2 per tick gives noticeably stronger
-     *  scroll without overflowing the field or causing page-warps. */
-    private static final int WHEEL_TICK_AMPLIFIER = 2;
+    /** Base multiplier applied to each emitted wheel tick. The Parsec SDK
+     *  wheel delta is a small integer; sending 2 per tick gives noticeably
+     *  stronger scroll without overflowing the field or causing page-warps.
+     *  The user-controllable {@link #scrollSensitivity} scales on top of this. */
+    private static final int WHEEL_TICK_BASE = 2;
+    /** User-configurable scroll sensitivity multiplier (Settings → Interactivity).
+     *  1.0 = default, < 1.0 = slower, > 1.0 = faster. */
+    private volatile float scrollSensitivity = 1.0f;
     private float cursorX = 0f;
     private float cursorY = 0f;
     private float lastX = 0f;
@@ -127,6 +131,22 @@ public class ClientGLSurface extends GLSurfaceView {
     public boolean isTrackpadMode() { return trackpadMode; }
 
     public void setSensitivity(float v) { this.sensitivity = Math.max(0.1f, v); }
+
+    /** Setter for the scroll-sensitivity multiplier. Lower bound at 0.1f to
+     *  avoid swallowing scroll entirely; upper bound is enforced by the UI
+     *  slider in {@code SettingsPanel}. */
+    public void setScrollSensitivity(float v) {
+        this.scrollSensitivity = Math.max(0.1f, v);
+    }
+
+    /** Resolved per-tick wheel delta (base × user multiplier, rounded). */
+    private int scaledTick(int ticks) {
+        int out = Math.round(ticks * (float) WHEEL_TICK_BASE * scrollSensitivity);
+        // Preserve sign even for very small multipliers — at least one notch
+        // in the direction the user is dragging so scroll never feels dead.
+        if (out == 0 && ticks != 0) out = ticks > 0 ? 1 : -1;
+        return out;
+    }
 
     /** When true, suppress the auto-tap-to-click behaviour so the user can hold
      *  an external mouse button and drag with another finger. */
@@ -352,7 +372,7 @@ public class ClientGLSurface extends GLSurfaceView {
                     if (ticks != 0) {
                         scrollAccum -= ticks * SCROLL_PX_PER_TICK;
                         // Parsec wheel: positive y = scroll down (SDK header).
-                        sendWheel(0, ticks * WHEEL_TICK_AMPLIFIER);
+                        sendWheel(0, scaledTick(ticks));
                     }
                 } else {
                     cursorX = clamp(cursorX + dx * sensitivity, 0, surfaceWidth - 1);
@@ -430,7 +450,7 @@ public class ClientGLSurface extends GLSurfaceView {
             twoFingerScrollAccum  -= ticksY * SCROLL_PX_PER_TICK;
             twoFingerScrollAccumX -= ticksX * SCROLL_PX_PER_TICK;
             // Parsec wheel.x: positive = scroll right; wheel.y: positive = down
-            sendWheel(ticksX * WHEEL_TICK_AMPLIFIER, ticksY * WHEEL_TICK_AMPLIFIER);
+            sendWheel(scaledTick(ticksX), scaledTick(ticksY));
             twoFingerScrollFired = true;
         }
     }
