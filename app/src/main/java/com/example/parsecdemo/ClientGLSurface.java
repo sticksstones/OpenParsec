@@ -2,6 +2,7 @@ package com.example.parsecdemo;
 
 import android.content.Context;
 import android.opengl.GLSurfaceView;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 
@@ -118,6 +119,21 @@ public class ClientGLSurface extends GLSurfaceView {
 
     private int hostWidth = 1920;
     private int hostHeight = 1080;
+
+    // ----- Physical / Bluetooth mouse state -----
+    /** Cached bitmask of the most recent ButtonState from a mouse-sourced
+     *  event. We diff against this on each event to derive press/release
+     *  edges per button. */
+    private int lastMouseButtons = 0;
+    /** Accumulators for fractional scroll axis values from a physical mouse
+     *  wheel (AXIS_VSCROLL / AXIS_HSCROLL come as floats but Parsec's wheel
+     *  API is integer ticks). */
+    private float mouseScrollAccumX = 0f;
+    private float mouseScrollAccumY = 0f;
+    /** Wheel-tick multiplier for physical mouse scroll. Independent of the
+     *  touchpad scroll knob — a physical wheel "click" should produce one
+     *  notch on the host. */
+    private static final int PHYSICAL_WHEEL_TICK = 1;
 
     private TrackpadListener trackpadListener;
 
@@ -325,12 +341,17 @@ public class ClientGLSurface extends GLSurfaceView {
         tapTapHoldDragActive = false;
         directLeftHeld = false;
         lastTapUpMs = 0L;
+        lastMouseButtons = 0;
+        mouseScrollAccumX = 0f;
+        mouseScrollAccumY = 0f;
         synchronized (parsecLock) {
             if (parsecAlive && parsec != null) {
                 // Release all standard mouse buttons defensively.
                 parsec.clientSendMouseButton(1 /* MOUSE_L */, false);
                 parsec.clientSendMouseButton(2 /* MOUSE_MIDDLE */, false);
                 parsec.clientSendMouseButton(3 /* MOUSE_R */, false);
+                parsec.clientSendMouseButton(4 /* MOUSE_X1 */, false);
+                parsec.clientSendMouseButton(5 /* MOUSE_X2 */, false);
             }
         }
         if (surfaceWidth > 0 && surfaceHeight > 0) {
@@ -378,10 +399,127 @@ public class ClientGLSurface extends GLSurfaceView {
         }
     }
 
+    /** True if this event came from a real mouse (USB / Bluetooth / trackpad
+     *  acting as a mouse). We check both the source bits and the tool type of
+     *  the active pointer — some OEMs only set one or the other. */
+    private static boolean isFromMouse(MotionEvent ev) {
+        if ((ev.getSource() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) return true;
+        int idx = ev.getActionIndex();
+        if (idx >= 0 && idx < ev.getPointerCount()) {
+            int tt = ev.getToolType(idx);
+            return tt == MotionEvent.TOOL_TYPE_MOUSE || tt == MotionEvent.TOOL_TYPE_STYLUS;
+        }
+        return false;
+    }
+
+    /**
+     * Hover motion, scroll-wheel, and non-primary button events from a real
+     * mouse arrive via onGenericMotionEvent (not onTouchEvent). Primary
+     * button-down on a mouse arrives via onTouchEvent and is diverted from
+     * there into {@link #handleMouseEvent}.
+     */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent ev) {
+        if (parsecAlive && isFromMouse(ev)) {
+            if (handleMouseEvent(ev)) return true;
+        }
+        return super.onGenericMotionEvent(ev);
+    }
+
+    /**
+     * Unified handler for any mouse-sourced MotionEvent. Translates:
+     *   - hover/move x,y → absolute host cursor motion
+     *   - getButtonState() diffs → MOUSE_L/R/MIDDLE/X1/X2 press & release
+     *   - AXIS_VSCROLL / AXIS_HSCROLL → wheel ticks
+     * No tap-to-click, no delta accumulation — a physical mouse always acts
+     * like a real mouse regardless of trackpad/direct mode.
+     */
+    private boolean handleMouseEvent(MotionEvent ev) {
+        int action = ev.getActionMasked();
+
+        switch (action) {
+            case MotionEvent.ACTION_HOVER_MOVE:
+            case MotionEvent.ACTION_HOVER_ENTER:
+            case MotionEvent.ACTION_MOVE:
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_BUTTON_PRESS:
+            case MotionEvent.ACTION_BUTTON_RELEASE: {
+                sendAbsoluteMotionMapped(ev.getX(), ev.getY());
+                cursorX = ev.getX();
+                cursorY = ev.getY();
+                dispatchMouseButtonDiff(ev.getButtonState());
+                return true;
+            }
+            case MotionEvent.ACTION_SCROLL: {
+                float vy = ev.getAxisValue(MotionEvent.AXIS_VSCROLL);
+                float hx = ev.getAxisValue(MotionEvent.AXIS_HSCROLL);
+                // Move the host cursor to where the wheel was scrolled so the
+                // scroll lands under the visible pointer.
+                sendAbsoluteMotionMapped(ev.getX(), ev.getY());
+                mouseScrollAccumY += vy;
+                mouseScrollAccumX += hx;
+                // Parsec wheel.y convention (per SDK header): positive y =
+                // scroll DOWN. Android AXIS_VSCROLL is positive UP, so invert.
+                int ticksY = -(int) mouseScrollAccumY;
+                int ticksX =  (int) mouseScrollAccumX;
+                if (ticksY != 0 || ticksX != 0) {
+                    mouseScrollAccumY += ticksY; // (note: ticksY already negated)
+                    mouseScrollAccumX -= ticksX;
+                    sendWheel(ticksX * PHYSICAL_WHEEL_TICK, ticksY * PHYSICAL_WHEEL_TICK);
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_HOVER_EXIT:
+            case MotionEvent.ACTION_CANCEL: {
+                // Release any buttons we currently believe are held — prevents
+                // a stuck button if the mouse is unplugged mid-click.
+                dispatchMouseButtonDiff(0);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Diff the new button bitmask against {@link #lastMouseButtons} and emit
+     *  press/release events for each bit that changed. */
+    private void dispatchMouseButtonDiff(int newState) {
+        int changed = newState ^ lastMouseButtons;
+        if (changed == 0) return;
+        if ((changed & MotionEvent.BUTTON_PRIMARY) != 0) {
+            sendMouseButtonRaw(1 /* MOUSE_L */,      (newState & MotionEvent.BUTTON_PRIMARY)   != 0);
+        }
+        if ((changed & MotionEvent.BUTTON_SECONDARY) != 0) {
+            sendMouseButtonRaw(3 /* MOUSE_R */,      (newState & MotionEvent.BUTTON_SECONDARY) != 0);
+        }
+        if ((changed & MotionEvent.BUTTON_TERTIARY) != 0) {
+            sendMouseButtonRaw(2 /* MOUSE_MIDDLE */, (newState & MotionEvent.BUTTON_TERTIARY)  != 0);
+        }
+        if ((changed & MotionEvent.BUTTON_BACK) != 0) {
+            sendMouseButtonRaw(4 /* MOUSE_X1 */,     (newState & MotionEvent.BUTTON_BACK)      != 0);
+        }
+        if ((changed & MotionEvent.BUTTON_FORWARD) != 0) {
+            sendMouseButtonRaw(5 /* MOUSE_X2 */,     (newState & MotionEvent.BUTTON_FORWARD)   != 0);
+        }
+        lastMouseButtons = newState;
+    }
+
+    private void sendMouseButtonRaw(int parsecButton, boolean pressed) {
+        synchronized (parsecLock) {
+            if (parsecAlive && parsec != null) parsec.clientSendMouseButton(parsecButton, pressed);
+        }
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
         super.onTouchEvent(ev);
         if (!parsecAlive) return true;
+
+        // Physical / Bluetooth mouse events arrive with SOURCE_MOUSE. We must
+        // handle these BEFORE the touch logic — otherwise left-click would go
+        // through trackpad/direct-touch (delta-cursor, tap-to-click) instead of
+        // behaving like a real mouse.
+        if (isFromMouse(ev)) return handleMouseEvent(ev);
 
         // Zoom mode is opt-in via the FAB. When it's OFF, every touch flows
         // straight to the regular trackpad / direct handler — pinches become
